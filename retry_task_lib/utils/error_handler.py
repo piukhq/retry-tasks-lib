@@ -1,0 +1,93 @@
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+
+import requests
+import rq
+import sentry_sdk
+from retry_task_lib.db.models import RetryTask
+from retry_task_lib.enums import QueuedRetryStatuses
+from sqlalchemy.orm.session import Session
+
+from . import logger
+from .synchronous import enqueue_task, get_retry_task_and_params, update_task
+
+if TYPE_CHECKING:  # pragma: no cover
+    from inspect import Traceback
+
+
+def _handle_request_exception(
+    queue: str,
+    connection: Any,
+    action: Callable,
+    backoff_base: int,
+    max_retries: int,
+    retry_task: RetryTask,
+    request_exception: requests.RequestException,
+) -> Tuple[dict, Optional[QueuedRetryStatuses], Optional[datetime]]:
+    status = None
+    next_attempt_time = None
+    subject = retry_task.task_type.name
+    terminal = False
+    response_audit: Dict[str, Any] = {"error": str(request_exception), "timestamp": datetime.utcnow().isoformat()}
+
+    if request_exception.response is not None:
+        response_audit["response"] = {
+            "status": request_exception.response.status_code,
+            "body": request_exception.response.text,
+        }
+
+    logger.warning(f"{subject} attempt {retry_task.attempts} failed for voucher: {retry_task.voucher_id}")
+
+    if retry_task.attempts < max_retries:
+        if request_exception.response is None or (500 <= request_exception.response.status_code < 600):
+            next_attempt_time = enqueue_task(
+                queue=queue,
+                connection=connection,
+                action=action,
+                retry_task=retry_task,
+                backoff_seconds=pow(backoff_base, float(retry_task.attempts)) * 60,
+            )
+            logger.info(f"Next attempt time at {next_attempt_time}")
+        else:
+            terminal = True
+            logger.warning(f"Received unhandlable response code ({request_exception.response.status_code}). Stopping")
+    else:
+        terminal = True
+        logger.warning(f"No further retries. Setting status to {QueuedRetryStatuses.FAILED}.")
+        sentry_sdk.capture_message(
+            f"{subject} failed (max attempts reached) for {retry_task}. Stopping... {request_exception}"
+        )
+
+    if terminal:
+        status = QueuedRetryStatuses.FAILED
+
+    return response_audit, status, next_attempt_time
+
+
+def handle_request_exception(
+    db_session: Session,
+    queue: str,
+    connection: Any,
+    action: Callable,
+    backoff_base: int,
+    max_retries: int,
+    job: rq.job.Job,
+    exc_value: Exception,
+) -> None:
+
+    response_audit = None
+    next_attempt_time = None
+
+    retry_task, _ = get_retry_task_and_params(db_session, job.kwargs["retry_task_id"], fetch_task_params=False)
+
+    if isinstance(exc_value, requests.RequestException):  # handle http failures specifically
+        response_audit, status, next_attempt_time = _handle_request_exception(
+            queue, connection, action, backoff_base, max_retries, retry_task, exc_value
+        )
+    else:  # otherwise report to sentry and fail the task
+        status = QueuedRetryStatuses.FAILED
+        sentry_sdk.capture_exception(exc_value)
+
+    update_task(
+        db_session, retry_task, next_attempt_time=next_attempt_time, response_audit=response_audit, status=status
+    )

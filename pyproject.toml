@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "retry-task-lib"
+version = "0.1.0"
+description = ""
+authors = ["Francesco Milani <fmilani@bink.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+rq = "^1.10.0"
+SQLAlchemy = "^1.4.25"
+requests = "^2.26.0"
+sentry-sdk = "^1.4.3"
+types-requests = "^2.25.9"
+
+[tool.poetry.dev-dependencies]
+mypy = "^0.910"
+black = "^21.9b0"
+flake8 = "^3.9.2"
+isort = "^5.9.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.mypy]
+ignore_missing_imports=true
+disallow_untyped_defs=true
