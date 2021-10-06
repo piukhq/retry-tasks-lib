@@ -9,6 +9,7 @@ default:
 test:style: &test
   stage: test
   before_script:
+    - pip install poetry
     - poetry install
   script:
     - poetry run flake8
@@ -44,9 +45,9 @@ test:pytest:
 build:
   stage: build
   before_script:
+    - pip install poetry poetry-dynamic-versioning
     - poetry config repositories.gitlab https://git.bink.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
     - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
-    - PIPX_HOME=/usr/local/lib/pipx PIPX_BIN_DIR=/usr/local/bin pipx inject poetry poetry-dynamic-versioning
     - apt-get update
     - apt-get install -y git
   script:
