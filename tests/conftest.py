@@ -30,8 +30,3 @@ def async_db_session() -> AsyncMock:
 @pytest.fixture(scope="function")
 def db_session() -> AsyncMock:
     return MagicMock(spec=Session)
-
-
-@pytest.fixture(scope="function")
-def redis() -> MagicMock:
-    return MagicMock()

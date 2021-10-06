@@ -16,12 +16,12 @@ now = datetime.utcnow()
 
 
 @pytest.fixture(scope="function")
-def handle_request_exception_params(db_session: mock.AsyncMock, redis: mock.MagicMock, retry_task: mock.Mock) -> dict:
+def handle_request_exception_params(db_session: mock.MagicMock, retry_task: RetryTask) -> dict:
     return {
         "db_session": db_session,
         "queue": "test_queue",
-        "connection": redis,
-        "action": mock.Mock(),
+        "connection": mock.MagicMock(name="connection"),
+        "action": mock.MagicMock(name="action"),
         "backoff_base": 3,
         "max_retries": 3,
         "job": mock.MagicMock(spec=rq.job.Job, kwargs={"retry_task_id": retry_task.retry_task_id}),
@@ -44,7 +44,7 @@ def fixed_now() -> Generator[datetime, None, None]:
 
 
 def test_handle_adjust_balance_error_5xx(
-    errored_retry_task: mock.Mock, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
     mock_flag_modified = mocker.patch("retry_task_lib.db.models.flag_modified")
     mock_enqueue = mocker.patch(
@@ -80,7 +80,7 @@ def test_handle_adjust_balance_error_5xx(
 
 
 def test_handle_adjust_balance_error_no_response(
-    errored_retry_task: mock.Mock, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
     mock_flag_modified = mocker.patch("retry_task_lib.db.models.flag_modified")
     mock_enqueue = mocker.patch(
@@ -114,7 +114,7 @@ def test_handle_adjust_balance_error_no_response(
 
 
 def test_handle_adjust_balance_error_no_further_retries(
-    errored_retry_task: mock.Mock, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
     errored_retry_task.attempts = handle_request_exception_params["max_retries"]
     mock_flag_modified = mocker.patch("retry_task_lib.db.models.flag_modified")
@@ -144,7 +144,7 @@ def test_handle_adjust_balance_error_no_further_retries(
 
 
 def test_handle_adjust_balance_error_unhandleable_response(
-    errored_retry_task: mock.Mock, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
     mock_flag_modified = mocker.patch("retry_task_lib.db.models.flag_modified")
     mock_enqueue = mocker.patch(
@@ -170,7 +170,7 @@ def test_handle_adjust_balance_error_unhandleable_response(
 
 
 def test_handle_adjust_balance_error_unhandled_exception(
-    errored_retry_task: mock.Mock, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
     mock_flag_modified = mocker.patch("retry_task_lib.db.models.flag_modified")
     mock_enqueue = mocker.patch(
