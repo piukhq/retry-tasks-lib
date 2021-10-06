@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, text
 from sqlalchemy.dialects.postgresql import JSONB
