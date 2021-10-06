@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Callable
 import rq
 
 from sqlalchemy.future import select
-from sqlalchemy.orm.attributes import flag_modified
 
 from retry_task_lib.db.models import RetryTask
 from retry_task_lib.db.retry_query import sync_run_query
