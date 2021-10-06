@@ -1,0 +1,56 @@
+stages:
+  - test
+  - build
+
+default:
+  image: ghcr.io/binkhq/python:3.9
+
+
+test:style: &test
+  stage: test
+  before_script:
+    - poetry install
+  script:
+    - poetry run flake8
+    - poetry run black --line-length 120 --check .
+    - poetry run isort --check --line-length 120 --profile black .
+
+
+test:complexity:
+  <<: *test
+  script:
+    - poetry run xenon --no-assert --max-average A --max-modules B --max-absolute B .
+
+
+test:type-check:
+  <<: *test
+  script:
+    - poetry run mypy retry_task_lib
+
+
+test:pytest:
+  <<: *test
+  script:
+    - poetry run pytest tests --verbose --cov=retry_task_lib --cov-report=xml --junitxml=report.xml
+  services:
+    - redis:latest
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      cobertura: coverage.xml
+
+
+build:
+  stage: build
+  before_script:
+    - poetry config repositories.gitlab https://git.bink.com/api/v4/projects/${CI_PROJECT_ID}/packages/pypi
+    - poetry config http-basic.gitlab gitlab-ci-token ${CI_JOB_TOKEN}
+    - PIPX_HOME=/usr/local/lib/pipx PIPX_BIN_DIR=/usr/local/bin pipx inject poetry poetry-dynamic-versioning
+    - apt-get update
+    - apt-get install -y git
+  script:
+    - poetry build
+    - poetry publish -r gitlab
+  only:
+    - tags
