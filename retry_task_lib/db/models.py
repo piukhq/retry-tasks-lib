@@ -1,12 +1,16 @@
-from typing import Dict, List, Tuple
+from datetime import datetime
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
-from retry_task_lib.enums import QueuedRetryStatuses, TaskParamsKeyTypes
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableList
-from sqlalchemy.orm import declarative_base, declarative_mixin, relationship
+from sqlalchemy.orm import Session, declarative_base, declarative_mixin, relationship
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.schema import MetaData
 from sqlalchemy.sql.sqltypes import String
+
+from retry_task_lib.db.retry_query import sync_run_query
+from retry_task_lib.enums import QueuedRetryStatuses, TaskParamsKeyTypes
 
 TmpBase = declarative_base()
 utc_timestamp_sql = text("TIMEZONE('utc', CURRENT_TIMESTAMP)")
@@ -42,6 +46,43 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
             TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=value)
             for key_id, value in values
         ]
+
+    @property
+    def get_params(self) -> dict:
+        task_params: dict = {}
+        for value in self.task_type_key_values:
+            key = value.task_type_key
+            task_params[key.name] = key.type.value(value.value)
+
+        return task_params
+
+    def update_task(
+        self,
+        db_session: "Session",
+        *,
+        response_audit: dict = None,
+        status: QueuedRetryStatuses = None,
+        next_attempt_time: datetime = None,
+        increase_attempts: bool = False,
+        clear_next_attempt_time: bool = False,
+    ) -> None:
+        def _query(db_session: "Session") -> None:
+            if response_audit is not None:
+                self.response_data.append(response_audit)
+                flag_modified(self, "response_data")
+
+            if status is not None:
+                self.retry_status = status
+
+            if increase_attempts:
+                self.attempts += 1
+
+            if clear_next_attempt_time or next_attempt_time is not None:
+                self.next_attempt_time = next_attempt_time
+
+            db_session.commit()
+
+        sync_run_query(_query, db_session)
 
 
 class TaskType(TmpBase, TimestampMixin):  # type: ignore

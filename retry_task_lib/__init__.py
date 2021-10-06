@@ -1,2 +1,1 @@
-import db
-import utils
+from . import db, utils

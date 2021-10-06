@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Tuple
+from typing import TYPE_CHECKING, Any, Callable
 
 import rq
+
+from sqlalchemy.future import select
+from sqlalchemy.orm.attributes import flag_modified
+
 from retry_task_lib.db.models import RetryTask
 from retry_task_lib.db.retry_query import sync_run_query
 from retry_task_lib.enums import QueuedRetryStatuses
-from sqlalchemy.future import select
-from sqlalchemy.orm.attributes import flag_modified
 
 from . import logger
 
@@ -14,53 +16,18 @@ if TYPE_CHECKING:  # pragma: no cover
     from sqlalchemy.orm import Session
 
 
-def get_retry_task_and_params(
-    db_session: "Session", retry_task_id: int, fetch_task_params: bool = True
-) -> Tuple[RetryTask, dict]:
-    def _query() -> RetryTask:
-        return db_session.execute(select(RetryTask).where(RetryTask.retry_task_id == retry_task_id)).scalars().one()
+def _get_retry_task_query(db_session: "Session", retry_task_id: int) -> RetryTask:  # pragma: no cover
+    return db_session.execute(select(RetryTask).where(RetryTask.retry_task_id == retry_task_id)).scalars().one()
 
-    retry_task: RetryTask = sync_run_query(_query, db_session, rollback_on_exc=False)
+
+def get_retry_task(db_session: "Session", retry_task_id: int) -> RetryTask:
+    retry_task: RetryTask = sync_run_query(
+        _get_retry_task_query, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
+    )
     if retry_task.retry_status not in ([QueuedRetryStatuses.IN_PROGRESS, QueuedRetryStatuses.WAITING]):
         raise ValueError(f"Incorrect state: {retry_task.retry_status}")
 
-    task_params: dict = {}
-    if fetch_task_params:
-        for value in retry_task.task_type_key_values:
-            key = value.task_type_key
-            task_params[key.name] = key.type.value(value.value)
-
-    return retry_task, task_params
-
-
-# move this to be a method of the RetryTask model
-def update_task(
-    db_session: "Session",
-    retry_task: RetryTask,
-    *,
-    response_audit: dict = None,
-    status: QueuedRetryStatuses = None,
-    next_attempt_time: datetime = None,
-    increase_attempts: bool = False,
-    clear_next_attempt_time: bool = False,
-) -> None:
-    def _query() -> None:
-        if response_audit is not None:
-            retry_task.response_data.append(response_audit)
-            flag_modified(retry_task, "response_data")
-
-        if status is not None:
-            retry_task.retry_status = status  # type: ignore
-
-        if increase_attempts:
-            retry_task.attempts += 1
-
-        if clear_next_attempt_time or next_attempt_time is not None:
-            retry_task.next_attempt_time = next_attempt_time
-
-        db_session.commit()
-
-    sync_run_query(_query, db_session)
+    return retry_task
 
 
 def enqueue_task(
@@ -77,7 +44,3 @@ def enqueue_task(
 
     logger.info(f"Requeued task for execution at {next_attempt_time.isoformat()}: {job}")
     return next_attempt_time
-
-
-def send_request(retry_task: RetryTask) -> dict:
-    raise NotImplementedError()

@@ -1,18 +1,17 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import requests
 import rq
 import sentry_sdk
-from retry_task_lib.db.models import RetryTask
-from retry_task_lib.enums import QueuedRetryStatuses
+
 from sqlalchemy.orm.session import Session
 
-from . import logger
-from .synchronous import enqueue_task, get_retry_task_and_params, update_task
+from retry_task_lib.db.models import RetryTask
+from retry_task_lib.enums import QueuedRetryStatuses
 
-if TYPE_CHECKING:  # pragma: no cover
-    from inspect import Traceback
+from . import logger
+from .synchronous import enqueue_task, get_retry_task
 
 
 def _handle_request_exception(
@@ -36,7 +35,7 @@ def _handle_request_exception(
             "body": request_exception.response.text,
         }
 
-    logger.warning(f"{subject} attempt {retry_task.attempts} failed for voucher: {retry_task.voucher_id}")
+    logger.warning(f"{subject} attempt {retry_task.attempts} failed for task: {retry_task.retry_task_id}")
 
     if retry_task.attempts < max_retries:
         if request_exception.response is None or (500 <= request_exception.response.status_code < 600):
@@ -78,7 +77,7 @@ def handle_request_exception(
     response_audit = None
     next_attempt_time = None
 
-    retry_task, _ = get_retry_task_and_params(db_session, job.kwargs["retry_task_id"], fetch_task_params=False)
+    retry_task = get_retry_task(db_session, job.kwargs["retry_task_id"])
 
     if isinstance(exc_value, requests.RequestException):  # handle http failures specifically
         response_audit, status, next_attempt_time = _handle_request_exception(
@@ -88,6 +87,10 @@ def handle_request_exception(
         status = QueuedRetryStatuses.FAILED
         sentry_sdk.capture_exception(exc_value)
 
-    update_task(
-        db_session, retry_task, next_attempt_time=next_attempt_time, response_audit=response_audit, status=status
+    retry_task.update_task(
+        db_session,
+        next_attempt_time=next_attempt_time,
+        response_audit=response_audit,
+        status=status,
+        clear_next_attempt_time=True,
     )

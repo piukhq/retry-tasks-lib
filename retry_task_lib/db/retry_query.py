@@ -1,11 +1,14 @@
 import logging
+
 from typing import Any, Callable
 
 import sentry_sdk
-from settings import DB_CONNECTION_RETRY_TIMES
+
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
+
+from retry_task_lib.settings import DB_CONNECTION_RETRY_TIMES
 
 logger = logging.getLogger("sqlalchemy-queries")
 
@@ -24,7 +27,7 @@ def sync_run_query(
     while attempts > 0:
         attempts -= 1
         try:
-            return fn(**kwargs)
+            return fn(db_session=session, **kwargs)
         except DBAPIError as ex:
             logger.debug(f"Attempt failed: {type(ex).__name__} {ex}")
             if rollback_on_exc:
@@ -35,6 +38,8 @@ def sync_run_query(
             else:
                 sentry_sdk.capture_message(f"Max db connection attempts reached: {repr(ex)}")
                 raise
+        except Exception as ex:
+            print(ex)
 
 
 async def async_run_query(
@@ -48,7 +53,7 @@ async def async_run_query(
     while attempts > 0:
         attempts -= 1
         try:
-            return await fn(**kwargs)
+            return await fn(db_session=session, **kwargs)
         except DBAPIError as ex:
             logger.debug(f"Attempt failed: {type(ex).__name__} {ex}")
             if rollback_on_exc:

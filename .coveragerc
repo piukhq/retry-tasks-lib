@@ -1,0 +1,8 @@
+[run]
+omit = tests
+       retry_task_lib/db
+branch = True
+
+[report]
+fail_under = 85
+exclude_lines = pragma: no cover
