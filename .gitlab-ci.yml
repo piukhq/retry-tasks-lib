@@ -13,8 +13,8 @@ test:style: &test
     - poetry install
   script:
     - poetry run flake8
-    - poetry run black --line-length 120 --check .
-    - poetry run isort --check --gitignore --line-length 120 --profile black .
+    - poetry run black --check .
+    - poetry run isort --check .
 
 
 test:complexity:
