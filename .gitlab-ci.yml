@@ -26,13 +26,13 @@ test:complexity:
 test:type-check:
   <<: *test
   script:
-    - poetry run mypy retry_task_lib
+    - poetry run mypy retry_tasks_lib
 
 
 test:pytest:
   <<: *test
   script:
-    - poetry run pytest tests --verbose --cov=retry_task_lib --cov-report=xml --junitxml=report.xml
+    - poetry run pytest tests --verbose --cov=retry_tasks_lib --cov-report=xml --junitxml=report.xml
   services:
     - redis:latest
   artifacts:

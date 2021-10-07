@@ -7,8 +7,8 @@ import sentry_sdk
 
 from sqlalchemy.orm.session import Session
 
-from retry_task_lib.db.models import RetryTask
-from retry_task_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.db.models import RetryTask
+from retry_tasks_lib.enums import QueuedRetryStatuses
 
 from . import logger
 from .synchronous import enqueue_task, get_retry_task

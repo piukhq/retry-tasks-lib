@@ -14,7 +14,7 @@ classifiers = [
     'Programming Language :: Python :: 3.9',
 ]
 packages = [
-    { include = "retry_task_lib" },
+    { include = "retry_tasks_lib" },
 ]
 
 [tool.poetry.dependencies]

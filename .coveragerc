@@ -1,6 +1,6 @@
 [run]
 omit = tests
-       retry_task_lib/db
+       retry_tasks_lib/db
 branch = True
 
 [report]

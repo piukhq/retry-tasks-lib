@@ -4,9 +4,9 @@ import pytest
 
 from pytest_mock import MockerFixture
 
-from retry_task_lib.db.models import RetryTask
-from retry_task_lib.enums import QueuedRetryStatuses
-from retry_task_lib.utils.asynchronous import enqueue_retry_task
+from retry_tasks_lib.db.models import RetryTask
+from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.utils.asynchronous import enqueue_retry_task
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_enqueue_retry_task(
     mock_queue = MockQueue.return_value
     action = mock.MagicMock(name="action")
     queue = "test_queue"
-    mock_query = mocker.patch("retry_task_lib.utils.asynchronous._get_retry_task")
+    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_retry_task")
     mock_query.return_value = retry_task
 
     await enqueue_retry_task(async_db_session, retry_task.retry_task_id, action, queue, mock.MagicMock)
@@ -38,13 +38,13 @@ async def test_enqueue_retry_task(
 async def test_enqueue_retry_task_failed_enqueue(
     mocker: MockerFixture, async_db_session: mock.AsyncMock, retry_task: RetryTask
 ) -> None:
-    mock_sentry = mocker.patch("retry_task_lib.utils.asynchronous.sentry_sdk")
+    mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
     mock_queue.enqueue.side_effect = Exception("test enqueue exception")
     action = mock.MagicMock(name="action")
     queue = "test_queue"
-    mock_query = mocker.patch("retry_task_lib.utils.asynchronous._get_retry_task")
+    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_retry_task")
     mock_query.return_value = retry_task
 
     await enqueue_retry_task(async_db_session, retry_task.retry_task_id, action, queue, mock.MagicMock())

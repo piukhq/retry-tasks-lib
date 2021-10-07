@@ -8,7 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from retry_task_lib.settings import DB_CONNECTION_RETRY_TIMES
+from retry_tasks_lib.settings import DB_CONNECTION_RETRY_TIMES
 
 logger = logging.getLogger("sqlalchemy-queries")
 

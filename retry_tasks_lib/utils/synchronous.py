@@ -5,9 +5,9 @@ import rq
 
 from sqlalchemy.future import select
 
-from retry_task_lib.db.models import RetryTask
-from retry_task_lib.db.retry_query import sync_run_query
-from retry_task_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.db.models import RetryTask
+from retry_tasks_lib.db.retry_query import sync_run_query
+from retry_tasks_lib.enums import QueuedRetryStatuses
 
 from . import logger
 

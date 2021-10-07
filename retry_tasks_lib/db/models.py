@@ -9,8 +9,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.schema import MetaData
 from sqlalchemy.sql.sqltypes import String
 
-from retry_task_lib.db.retry_query import sync_run_query
-from retry_task_lib.enums import QueuedRetryStatuses, TaskParamsKeyTypes
+from retry_tasks_lib.db.retry_query import sync_run_query
+from retry_tasks_lib.enums import QueuedRetryStatuses, TaskParamsKeyTypes
 
 TmpBase = declarative_base()
 utc_timestamp_sql = text("TIMEZONE('utc', CURRENT_TIMESTAMP)")

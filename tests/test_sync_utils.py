@@ -7,21 +7,21 @@ import pytest
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
-from retry_task_lib.db.models import RetryTask
-from retry_task_lib.enums import QueuedRetryStatuses
-from retry_task_lib.utils.synchronous import enqueue_task, get_retry_task
+from retry_tasks_lib.db.models import RetryTask
+from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.utils.synchronous import enqueue_task, get_retry_task
 
 
 @pytest.fixture(scope="function")
 def fixed_now() -> Generator[datetime, None, None]:
     now = datetime.utcnow()
-    with mock.patch("retry_task_lib.utils.synchronous.datetime") as mock_datetime:
+    with mock.patch("retry_tasks_lib.utils.synchronous.datetime") as mock_datetime:
         mock_datetime.utcnow.return_value = now
         yield now
 
 
 def test_get_retry_task(retry_task: RetryTask, mocker: MockerFixture, db_session: Session) -> None:
-    mocker.patch("retry_task_lib.utils.synchronous._get_retry_task_query", return_value=retry_task)
+    mocker.patch("retry_tasks_lib.utils.synchronous._get_retry_task_query", return_value=retry_task)
 
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
