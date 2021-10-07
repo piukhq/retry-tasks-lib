@@ -10,11 +10,4 @@ def get_env(k: str, default: str = None, *, conv: Callable = str) -> Any:
         return None
 
 
-def to_bool(v: str) -> bool:
-    if v.lower() in ["true", "1", "t", "yes", "y"]:
-        return True
-    else:
-        return False
-
-
 DB_CONNECTION_RETRY_TIMES = get_env("DB_CONNECTION_RETRY_TIMES", "3", conv=int)
