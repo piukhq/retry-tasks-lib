@@ -9,7 +9,7 @@ default:
 test:style: &test
   stage: test
   before_script:
-    - pip install poetry
+    - pip install git poetry
     - poetry install
   script:
     - poetry run flake8
