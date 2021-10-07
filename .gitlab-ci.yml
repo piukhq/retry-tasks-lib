@@ -14,7 +14,7 @@ test:style: &test
   script:
     - poetry run flake8
     - poetry run black --line-length 120 --check .
-    - poetry run isort --check --line-length 120 --profile black .
+    - poetry run isort --check --gitignore --line-length 120 --profile black .
 
 
 test:complexity:
