@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.db.retry_query import sync_run_query
-from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.enums import RetryTaskStatuses
 
 from . import logger
 
@@ -23,7 +23,7 @@ def get_retry_task(db_session: "Session", retry_task_id: int) -> RetryTask:
     retry_task: RetryTask = sync_run_query(
         _get_retry_task_query, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
-    if retry_task.retry_status not in ([QueuedRetryStatuses.IN_PROGRESS, QueuedRetryStatuses.WAITING]):
+    if retry_task.retry_status not in ([RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING]):
         raise ValueError(f"Incorrect state: {retry_task.retry_status}")
 
     return retry_task

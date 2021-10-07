@@ -8,7 +8,7 @@ import sentry_sdk
 from sqlalchemy.orm.session import Session
 
 from retry_tasks_lib.db.models import RetryTask
-from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.enums import RetryTaskStatuses
 
 from . import logger
 from .synchronous import enqueue_task, get_retry_task
@@ -22,7 +22,7 @@ def _handle_request_exception(
     max_retries: int,
     retry_task: RetryTask,
     request_exception: requests.RequestException,
-) -> Tuple[dict, Optional[QueuedRetryStatuses], Optional[datetime]]:
+) -> Tuple[dict, Optional[RetryTaskStatuses], Optional[datetime]]:
     status = None
     next_attempt_time = None
     subject = retry_task.task_type.name
@@ -52,13 +52,13 @@ def _handle_request_exception(
             logger.warning(f"Received unhandlable response code ({request_exception.response.status_code}). Stopping")
     else:
         terminal = True
-        logger.warning(f"No further retries. Setting status to {QueuedRetryStatuses.FAILED}.")
+        logger.warning(f"No further retries. Setting status to {RetryTaskStatuses.FAILED}.")
         sentry_sdk.capture_message(
             f"{subject} failed (max attempts reached) for {retry_task}. Stopping... {request_exception}"
         )
 
     if terminal:
-        status = QueuedRetryStatuses.FAILED
+        status = RetryTaskStatuses.FAILED
 
     return response_audit, status, next_attempt_time
 
@@ -84,7 +84,7 @@ def handle_request_exception(
             queue, connection, action, backoff_base, max_retries, retry_task, exc_value
         )
     else:  # otherwise report to sentry and fail the task
-        status = QueuedRetryStatuses.FAILED
+        status = RetryTaskStatuses.FAILED
         sentry_sdk.capture_exception(exc_value)
 
     retry_task.update_task(

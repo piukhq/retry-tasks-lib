@@ -11,7 +11,7 @@ def get_env(k: str, default: str = None, *, conv: Callable = str) -> Any:
 
 
 def to_bool(v: str) -> bool:
-    if v.lower() == "true":
+    if v.lower() in ["true", "1", "t", "yes", "y"]:
         return True
     else:
         return False

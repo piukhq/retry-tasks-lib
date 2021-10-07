@@ -10,7 +10,7 @@ from sqlalchemy.sql.schema import MetaData
 from sqlalchemy.sql.sqltypes import String
 
 from retry_tasks_lib.db.retry_query import sync_run_query
-from retry_tasks_lib.enums import QueuedRetryStatuses, TaskParamsKeyTypes
+from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
 
 TmpBase = declarative_base()
 utc_timestamp_sql = text("TIMEZONE('utc', CURRENT_TIMESTAMP)")
@@ -34,7 +34,7 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
     attempts = Column(Integer, default=0, nullable=False)
     response_data = Column(MutableList.as_mutable(JSONB), nullable=False, default=text("'[]'::jsonb"))
     next_attempt_time = Column(DateTime, nullable=True)
-    retry_status = Column(Enum(QueuedRetryStatuses), nullable=False, default=QueuedRetryStatuses.PENDING)
+    retry_status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING)
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
@@ -48,7 +48,7 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
         ]
 
     @property
-    def get_params(self) -> dict:
+    def params(self) -> dict:
         task_params: dict = {}
         for value in self.task_type_key_values:
             key = value.task_type_key
@@ -61,7 +61,7 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
         db_session: "Session",
         *,
         response_audit: dict = None,
-        status: QueuedRetryStatuses = None,
+        status: RetryTaskStatuses = None,
         next_attempt_time: datetime = None,
         increase_attempts: bool = False,
         clear_next_attempt_time: bool = False,

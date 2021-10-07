@@ -8,7 +8,7 @@ from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask
-from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.synchronous import enqueue_task, get_retry_task
 
 
@@ -26,19 +26,19 @@ def test_get_retry_task(retry_task: RetryTask, mocker: MockerFixture, db_session
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 
-    retry_task.retry_status = QueuedRetryStatuses.IN_PROGRESS
+    retry_task.retry_status = RetryTaskStatuses.IN_PROGRESS
     fetched_task = get_retry_task(db_session, retry_task.retry_task_id)
     assert retry_task == fetched_task
 
-    retry_task.retry_status = QueuedRetryStatuses.WAITING
+    retry_task.retry_status = RetryTaskStatuses.WAITING
     fetched_task = get_retry_task(db_session, retry_task.retry_task_id)
     assert retry_task == fetched_task
 
-    retry_task.retry_status = QueuedRetryStatuses.FAILED
+    retry_task.retry_status = RetryTaskStatuses.FAILED
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 
-    retry_task.retry_status = QueuedRetryStatuses.SUCCESS
+    retry_task.retry_status = RetryTaskStatuses.SUCCESS
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 

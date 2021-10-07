@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.db.retry_query import async_run_query
-from retry_tasks_lib.enums import QueuedRetryStatuses
+from retry_tasks_lib.enums import RetryTaskStatuses
 
 
 async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
@@ -19,7 +19,7 @@ async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> Retry
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id == retry_task_id,
-                    RetryTask.retry_status == QueuedRetryStatuses.PENDING,
+                    RetryTask.retry_status == RetryTaskStatuses.PENDING,
                 )
             )
         )
@@ -29,7 +29,7 @@ async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> Retry
 
 
 async def _update_status_and_flush(db_session: AsyncSession, retry_task: RetryTask) -> None:
-    retry_task.retry_status = QueuedRetryStatuses.IN_PROGRESS
+    retry_task.retry_status = RetryTaskStatuses.IN_PROGRESS
     await db_session.flush()
 
 
