@@ -7,10 +7,10 @@ from retry_tasks_lib.enums import TaskParamsKeyTypes, to_bool
 
 def test_to_bool() -> None:
     for value in ("y", "yes", "t", "true", "TRUE", "True", "1"):
-        assert to_bool(value) == True
+        assert to_bool(value) is True
 
     for value in ("n", "no", "False", "false", "anything", "0", ""):
-        assert to_bool(value) == False
+        assert to_bool(value) is False
 
 
 def test_task_params_key_type() -> None:
