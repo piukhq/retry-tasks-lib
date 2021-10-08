@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Session, declarative_base, declarative_mixin, relationship
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.sql.expression import null
 from sqlalchemy.sql.schema import MetaData
 from sqlalchemy.sql.sqltypes import String
 
@@ -89,7 +90,8 @@ class TaskType(TmpBase, TimestampMixin):  # type: ignore
     __tablename__ = "task_type"
 
     task_type_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=False, index=True)
+    path = Column(String, nullable=False)
 
     retry_tasks = relationship("RetryTask", back_populates="task_type", lazy=True)
     task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy=True)
