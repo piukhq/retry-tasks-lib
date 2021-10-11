@@ -1,50 +1,42 @@
-class RetryTaskAdmin:
-    column_exclude_list = ("response_data",)
-    column_filters = (
-        "retry_status",
-        "task_type.name",
-        "task_type_key_values.task_type_key.name",
-        "task_type_key_values.value",
-    )
-    column_searchable_list = ("retry_task_id", "task_type_key_values.value")
-    column_display_pk = True
-    column_list = (
-        "task_type",
-        "created_at",
-        "updated_at",
-        "attempts",
-        "response_data",
-        "next_attempt_time",
-        "retry_status",
-        "task_params",
-    )
+from typing import Dict
 
-    column_details_list = (
-        "task_type",
-        "created_at",
-        "updated_at",
-        "attempts",
-        "response_data",
-        "next_attempt_time",
-        "retry_status",
-        "task_params",
-    )
-
-
-class TaskTypeAdmin:
-    pass
-
-
-class TaskTypeKeyAdmin:
-    pass
-
-
-class TaskTypeKeyValueAdmin:
-    pass
+views_values: Dict[str, dict] = {
+    "RetryTaskAdmin": dict(
+        column_exclude_list=("audit_data",),
+        column_filters=(
+            "status",
+            "task_type.name",
+            "task_type_key_values.task_type_key.name",
+            "task_type_key_values.value",
+        ),
+        column_searchable_list=("retry_task_id", "task_type_key_values.value"),
+        column_display_pk=True,
+        column_list=(
+            "task_type",
+            "created_at",
+            "updated_at",
+            "attempts",
+            "audit_data",
+            "next_attempt_time",
+            "status",
+            "params",
+        ),
+        column_details_list=(
+            "task_type",
+            "created_at",
+            "updated_at",
+            "attempts",
+            "audit_data",
+            "next_attempt_time",
+            "status",
+            "params",
+        ),
+    ),
+    "TaskTypeAdmin": dict(),
+    "TaskTypeKeyAdmin": dict(),
+    "TaskTypeKeyValueAdmin": dict(),
+}
 
 
 def get_views(base: type) -> dict:
-    return {
-        view.__name__: type(view.__name__, (base,), view.__dict__)
-        for view in (RetryTaskAdmin, TaskTypeAdmin, TaskTypeKeyAdmin, TaskTypeKeyValueAdmin)
-    }
+    return {name: type(name, (base,), values) for name, values in views_values.items()}
