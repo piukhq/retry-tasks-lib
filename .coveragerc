@@ -1,6 +1,7 @@
 [run]
 omit = tests
        retry_tasks_lib/db
+       retry_tasks_lib/admin
 branch = True
 
 [report]
