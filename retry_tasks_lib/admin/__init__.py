@@ -1,12 +1,15 @@
-from flask_admin import Admin
-from flask_admin.contrib.sqla import ModelView
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flask_admin import Admin
+    from flask_admin.contrib.sqla import ModelView
+    from sqlalchemy.orm import Session
 
 from .models import RetryTask, TaskType, TaskTypeKey, TaskTypeKeyValue
 from .views import get_views
 
 
-def load_admin_views(admin: Admin, db_session: Session, auth_base: ModelView, category: str) -> None:
+def load_admin_views(admin: "Admin", db_session: "Session", auth_base: "ModelView", category: str) -> None:
     views = get_views(auth_base)
 
     admin.add_view(

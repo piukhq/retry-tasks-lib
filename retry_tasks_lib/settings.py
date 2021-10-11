@@ -2,7 +2,7 @@ from os import getenv
 from typing import Any, Callable
 
 
-def get_env(k: str, default: str = None, *, conv: Callable = str) -> Any:
+def get_env(k: str, default: str = None, *, conv: Callable = str) -> Any:  # pragma: no cover
     v = getenv(k, default)
     if v is not None:
         return conv(v)
