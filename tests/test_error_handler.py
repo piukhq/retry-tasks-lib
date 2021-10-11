@@ -31,7 +31,7 @@ def handle_request_exception_params(db_session: mock.MagicMock, retry_task: Retr
 @pytest.fixture(scope="function")
 def errored_retry_task(retry_task: RetryTask) -> RetryTask:
     retry_task.attempts = 1
-    retry_task.retry_status = RetryTaskStatuses.IN_PROGRESS
+    retry_task.status = RetryTaskStatuses.IN_PROGRESS
     retry_task.next_attempt_time = now
     return retry_task
 
@@ -63,9 +63,9 @@ def test_handle_adjust_balance_error_5xx(
         ),
     )
 
-    assert len(errored_retry_task.response_data) == 1
-    assert errored_retry_task.response_data[0]["response"]["body"] == "Internal server error"
-    assert errored_retry_task.response_data[0]["response"]["status"] == 500
+    assert len(errored_retry_task.audit_data) == 1
+    assert errored_retry_task.audit_data[0]["response"]["body"] == "Internal server error"
+    assert errored_retry_task.audit_data[0]["response"]["status"] == 500
     mock_flag_modified.assert_called_once()
     mock_enqueue.assert_called_once_with(
         queue=handle_request_exception_params["queue"],
@@ -74,7 +74,7 @@ def test_handle_adjust_balance_error_5xx(
         retry_task=errored_retry_task,
         backoff_seconds=180.0,
     )
-    assert errored_retry_task.retry_status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
     assert errored_retry_task.attempts == 1
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
@@ -98,8 +98,8 @@ def test_handle_adjust_balance_error_no_response(
         ),
     )
 
-    assert len(errored_retry_task.response_data) == 1
-    assert errored_retry_task.response_data[0]["error"] == "Request timed out"
+    assert len(errored_retry_task.audit_data) == 1
+    assert errored_retry_task.audit_data[0]["error"] == "Request timed out"
     mock_flag_modified.assert_called_once()
     mock_enqueue.assert_called_once_with(
         queue=handle_request_exception_params["queue"],
@@ -108,7 +108,7 @@ def test_handle_adjust_balance_error_no_response(
         retry_task=errored_retry_task,
         backoff_seconds=180.0,
     )
-    assert errored_retry_task.retry_status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
     assert errored_retry_task.attempts == 1
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
@@ -138,7 +138,7 @@ def test_handle_adjust_balance_error_no_further_retries(
     mock_enqueue.assert_not_called()
     mock_sentry.capture_message.assert_called_once()
     mock_flag_modified.assert_called_once()
-    assert errored_retry_task.retry_status == RetryTaskStatuses.FAILED
+    assert errored_retry_task.status == RetryTaskStatuses.FAILED
     assert errored_retry_task.attempts == handle_request_exception_params["max_retries"]
     assert errored_retry_task.next_attempt_time is None
 
@@ -165,7 +165,7 @@ def test_handle_adjust_balance_error_unhandleable_response(
     mock_enqueue.assert_not_called()
     mock_sentry.capture_message.assert_not_called()
     mock_flag_modified.assert_called_once()
-    assert errored_retry_task.retry_status == RetryTaskStatuses.FAILED
+    assert errored_retry_task.status == RetryTaskStatuses.FAILED
     assert errored_retry_task.next_attempt_time is None
 
 
@@ -187,5 +187,5 @@ def test_handle_adjust_balance_error_unhandled_exception(
     mock_enqueue.assert_not_called()
     mock_sentry.capture_exception.assert_called_once()
     mock_flag_modified.assert_not_called()
-    assert errored_retry_task.retry_status == RetryTaskStatuses.FAILED
+    assert errored_retry_task.status == RetryTaskStatuses.FAILED
     assert errored_retry_task.next_attempt_time is None

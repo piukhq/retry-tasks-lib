@@ -26,19 +26,19 @@ def test_get_retry_task(retry_task: RetryTask, mocker: MockerFixture, db_session
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 
-    retry_task.retry_status = RetryTaskStatuses.IN_PROGRESS
+    retry_task.status = RetryTaskStatuses.IN_PROGRESS
     fetched_task = get_retry_task(db_session, retry_task.retry_task_id)
     assert retry_task == fetched_task
 
-    retry_task.retry_status = RetryTaskStatuses.WAITING
+    retry_task.status = RetryTaskStatuses.WAITING
     fetched_task = get_retry_task(db_session, retry_task.retry_task_id)
     assert retry_task == fetched_task
 
-    retry_task.retry_status = RetryTaskStatuses.FAILED
+    retry_task.status = RetryTaskStatuses.FAILED
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 
-    retry_task.retry_status = RetryTaskStatuses.SUCCESS
+    retry_task.status = RetryTaskStatuses.SUCCESS
     with pytest.raises(ValueError):
         get_retry_task(db_session, retry_task.retry_task_id)
 

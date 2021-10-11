@@ -24,7 +24,7 @@ async def test_enqueue_retry_task(
 
     await enqueue_retry_task(async_db_session, retry_task.retry_task_id, action, queue, mock.MagicMock)
 
-    assert retry_task.retry_status == RetryTaskStatuses.IN_PROGRESS
+    assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue.assert_called_once_with(
         action,

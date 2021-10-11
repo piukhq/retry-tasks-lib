@@ -23,8 +23,8 @@ def get_retry_task(db_session: "Session", retry_task_id: int) -> RetryTask:
     retry_task: RetryTask = sync_run_query(
         _get_retry_task_query, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
-    if retry_task.retry_status not in ([RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING]):
-        raise ValueError(f"Incorrect state: {retry_task.retry_status}")
+    if retry_task.status not in ([RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING]):
+        raise ValueError(f"Incorrect state: {retry_task.status}")
 
     return retry_task
 

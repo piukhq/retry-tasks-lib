@@ -19,7 +19,7 @@ async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> Retry
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id == retry_task_id,
-                    RetryTask.retry_status == RetryTaskStatuses.PENDING,
+                    RetryTask.status == RetryTaskStatuses.PENDING,
                 )
             )
         )
@@ -29,7 +29,7 @@ async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> Retry
 
 
 async def _update_status_and_flush(db_session: AsyncSession, retry_task: RetryTask) -> None:
-    retry_task.retry_status = RetryTaskStatuses.IN_PROGRESS
+    retry_task.status = RetryTaskStatuses.IN_PROGRESS
     await db_session.flush()
 
 

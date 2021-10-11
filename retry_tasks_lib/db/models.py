@@ -32,9 +32,9 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
 
     retry_task_id = Column(Integer, primary_key=True)
     attempts = Column(Integer, default=0, nullable=False)
-    response_data = Column(MutableList.as_mutable(JSONB), nullable=False, default=text("'[]'::jsonb"))
+    audit_data = Column(MutableList.as_mutable(JSONB), nullable=False, default=text("'[]'::jsonb"))
     next_attempt_time = Column(DateTime, nullable=True)
-    retry_status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING)
+    status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING)
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
@@ -68,11 +68,11 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
     ) -> None:
         def _query(db_session: "Session") -> None:
             if response_audit is not None:
-                self.response_data.append(response_audit)
-                flag_modified(self, "response_data")
+                self.audit_data.append(response_audit)
+                flag_modified(self, "audit_data")
 
             if status is not None:
-                self.retry_status = status
+                self.status = status
 
             if increase_attempts:
                 self.attempts += 1
@@ -83,6 +83,9 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
             db_session.commit()
 
         sync_run_query(_query, db_session)
+
+    def __str__(self) -> str:
+        return f"RetryTask PK: {self.retry_task_id} ({self.task_type.name})"
 
 
 class TaskType(TmpBase, TimestampMixin):  # type: ignore
@@ -99,6 +102,9 @@ class TaskType(TmpBase, TimestampMixin):  # type: ignore
     def key_ids_by_name(self) -> Dict[str, int]:
         return {key.name: key.task_type_key_id for key in self.task_type_keys}
 
+    def __str__(self) -> str:
+        return f"{self.name} (pk={self.task_type_id})"
+
 
 class TaskTypeKey(TmpBase, TimestampMixin):  # type: ignore
     __tablename__ = "task_type_key"
@@ -111,6 +117,9 @@ class TaskTypeKey(TmpBase, TimestampMixin):  # type: ignore
 
     task_type = relationship("TaskType", back_populates="task_type_keys", lazy=True)
     task_type_key_values = relationship("TaskTypeKeyValue", back_populates="task_type_key", lazy=True)
+
+    def __str__(self) -> str:
+        return f"{self.name} (pk={self.task_type_key_id})"
 
 
 class TaskTypeKeyValue(TmpBase, TimestampMixin):  # type: ignore
@@ -131,6 +140,9 @@ class TaskTypeKeyValue(TmpBase, TimestampMixin):  # type: ignore
 
     task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy=True)
     retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy=True)
+
+    def __str__(self) -> str:
+        return f"{self.task_type_key.name}: {self.value} (pk={self.retry_task_id},{self.task_type_key_id})"
 
 
 def load_models_to_metadata(metadata: MetaData) -> None:

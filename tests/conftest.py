@@ -14,9 +14,9 @@ def retry_task() -> RetryTask:
     return RetryTask(
         retry_task_id=1,
         task_type_id=1,
-        retry_status=RetryTaskStatuses.PENDING,
+        status=RetryTaskStatuses.PENDING,
         attempts=0,
-        response_data=[],
+        audit_data=[],
         next_attempt_time=None,
         task_type=MagicMock(name="TaskType"),
     )
