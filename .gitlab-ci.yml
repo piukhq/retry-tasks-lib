@@ -2,9 +2,13 @@ stages:
   - test
   - build
 
+variables:
+  POSTGRES_DB: retry_tasks_lib_test
+  POSTGRES_HOST_AUTH_METHOD: trust
+  SQLALCHEMY_DATABASE_URI: "postgresql+asyncpg://postgres@postgres:5432/retry_tasks_lib_test"
+
 default:
   image: ghcr.io/binkhq/python:3.9
-
 
 test:style: &test
   stage: test
@@ -16,31 +20,28 @@ test:style: &test
     - poetry run black --check .
     - poetry run isort --check .
 
-
 test:complexity:
   <<: *test
   script:
     - poetry run xenon --no-assert --max-average A --max-modules B --max-absolute B .
-
 
 test:type-check:
   <<: *test
   script:
     - poetry run mypy retry_tasks_lib
 
-
 test:pytest:
   <<: *test
   script:
     - poetry run pytest tests --verbose --cov=retry_tasks_lib --cov-report=xml --junitxml=report.xml
   services:
+    - postgres:latest
     - redis:latest
   artifacts:
     when: always
     reports:
       junit: report.xml
       cobertura: coverage.xml
-
 
 build:
   stage: build
