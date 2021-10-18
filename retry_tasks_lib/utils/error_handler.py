@@ -11,7 +11,7 @@ from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
 
 from . import logger
-from .synchronous import enqueue_task, get_retry_task
+from .synchronous import enqueue_retry_task_delay, get_retry_task
 
 
 def _handle_request_exception(
@@ -39,12 +39,12 @@ def _handle_request_exception(
 
     if retry_task.attempts < max_retries:
         if request_exception.response is None or (500 <= request_exception.response.status_code < 600):
-            next_attempt_time = enqueue_task(
+            next_attempt_time = enqueue_retry_task_delay(
                 queue=queue,
                 connection=connection,
                 action=action,
                 retry_task=retry_task,
-                backoff_seconds=pow(backoff_base, float(retry_task.attempts)) * 60,
+                delay_seconds=pow(backoff_base, float(retry_task.attempts)) * 60,
             )
             logger.info(f"Next attempt time at {next_attempt_time}")
         else:

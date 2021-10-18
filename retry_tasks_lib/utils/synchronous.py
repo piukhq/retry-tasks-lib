@@ -29,11 +29,11 @@ def get_retry_task(db_session: "Session", retry_task_id: int) -> RetryTask:
     return retry_task
 
 
-def enqueue_task(
-    *, queue: str, connection: Any, action: Callable, retry_task: RetryTask, backoff_seconds: float
+def enqueue_retry_task_delay(
+    *, queue: str, connection: Any, action: Callable, retry_task: RetryTask, delay_seconds: float
 ) -> datetime:
     q = rq.Queue(queue, connection=connection)
-    next_attempt_time = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(seconds=backoff_seconds)
+    next_attempt_time = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(seconds=delay_seconds)
     job = q.enqueue_at(  # requires rq worker --with-scheduler
         next_attempt_time,
         action,
@@ -41,5 +41,5 @@ def enqueue_task(
         failure_ttl=60 * 60 * 24 * 7,  # 1 week
     )
 
-    logger.info(f"Requeued task for execution at {next_attempt_time.isoformat()}: {job}")
+    logger.info(f"Enqueued task for execution at {next_attempt_time.isoformat()}: {job}")
     return next_attempt_time

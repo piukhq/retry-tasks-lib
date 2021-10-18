@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.utils.synchronous import enqueue_task, get_retry_task
+from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task
 
 
 @pytest.fixture(scope="function")
@@ -43,7 +43,7 @@ def test_get_retry_task(retry_task: RetryTask, mocker: MockerFixture, db_session
         get_retry_task(db_session, retry_task.retry_task_id)
 
 
-def test_enqueue_task(retry_task: RetryTask, fixed_now: datetime, mocker: MockerFixture) -> None:
+def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mocker: MockerFixture) -> None:
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
 
@@ -53,12 +53,12 @@ def test_enqueue_task(retry_task: RetryTask, fixed_now: datetime, mocker: Mocker
 
     expected_next_attempt_time = fixed_now.replace(tzinfo=timezone.utc) + timedelta(seconds=backoff_seconds)
 
-    next_attempt_time = enqueue_task(
+    next_attempt_time = enqueue_retry_task_delay(
         queue=queue,
         connection=mock.MagicMock(name="connection"),
         action=action,
         retry_task=retry_task,
-        backoff_seconds=backoff_seconds,
+        delay_seconds=backoff_seconds,
     )
 
     assert next_attempt_time == expected_next_attempt_time
