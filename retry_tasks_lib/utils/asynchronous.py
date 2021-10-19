@@ -113,7 +113,7 @@ async def enqueue_many_retry_tasks(
     try:
         q = rq.Queue(queue, connection=connection)
         retry_tasks: list[RetryTask] = await async_run_query(
-            _get_retry_tasks, db_session, rollback_on_exc=False, retry_task_id=retry_tasks_ids
+            _get_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
         )
 
         await async_run_query(_update_many_statuses_and_flush, db_session, retry_tasks=retry_tasks)
