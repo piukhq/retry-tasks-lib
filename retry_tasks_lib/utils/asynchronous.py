@@ -13,7 +13,7 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 from . import logger
 
 
-async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
+async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
     return (
         (
             await db_session.execute(
@@ -30,7 +30,9 @@ async def _get_retry_task(db_session: AsyncSession, retry_task_id: int) -> Retry
     )
 
 
-async def _get_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> list[RetryTask]:  # pragma: no cover
+async def _get_pending_retry_tasks(
+    db_session: AsyncSession, retry_tasks_ids: list[int]
+) -> list[RetryTask]:  # pragma: no cover
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -89,7 +91,7 @@ async def enqueue_retry_task(
     try:
         q = rq.Queue(queue, connection=connection)
         retry_task = await async_run_query(
-            _get_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
+            _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
         )
         await async_run_query(_update_status_and_flush, db_session, retry_task=retry_task)
         q.enqueue(
@@ -113,7 +115,7 @@ async def enqueue_many_retry_tasks(
     try:
         q = rq.Queue(queue, connection=connection)
         retry_tasks: list[RetryTask] = await async_run_query(
-            _get_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
+            _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_task_ids=retry_tasks_ids
         )
 
         await async_run_query(_update_many_statuses_and_flush, db_session, retry_tasks=retry_tasks)
