@@ -50,15 +50,11 @@ async def _get_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int])
     missing_ids = retry_tasks_ids_set - {retry_task.retry_task_id for retry_task in retry_tasks}
     if missing_ids == retry_tasks_ids_set:
         raise ValueError(
-            "None of the RetryTasks requested for enqueuing was found in the db. "
-            f"Requested RetryTaks ids: {retry_tasks_ids_set}"
+            f"Error fetching all the RetryTasks requested for enqueuing. Requested RetryTaks ids: {retry_tasks_ids_set}"
         )
 
     if missing_ids:
-        logger.error(
-            "These RetryTasks of type were requested for enqueuing but not were found in the db. "
-            f"Requested RetryTaks ids: {missing_ids}"
-        )
+        logger.error(f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTaks ids: {missing_ids}")
 
     return retry_tasks
 
