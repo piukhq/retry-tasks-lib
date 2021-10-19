@@ -126,6 +126,5 @@ async def test__get_retry_tasks(mocker: MockerFixture, async_db_session: mock.As
     unexpected_id = retry_task.retry_task_id + 1
     await _get_retry_tasks(async_db_session, [retry_task.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
-        "These RetryTasks of type were requested for enqueuing but not were found in the db. "
-        f"Requested RetryTaks ids: {set([unexpected_id])}"
+        f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTaks ids: {set([unexpected_id])}"
     )
