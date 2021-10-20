@@ -1,10 +1,10 @@
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableList
-from sqlalchemy.orm import Session, declarative_base, declarative_mixin, relationship
+from sqlalchemy.orm import declarative_base, declarative_mixin, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.schema import MetaData
 from sqlalchemy.sql.sqltypes import String
@@ -12,7 +12,10 @@ from sqlalchemy.sql.sqltypes import String
 from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
 
-TmpBase = declarative_base()
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+TmpBase: Any = declarative_base()
 utc_timestamp_sql = text("TIMEZONE('utc', CURRENT_TIMESTAMP)")
 
 
@@ -27,7 +30,7 @@ class TimestampMixin:
     )
 
 
-class RetryTask(TmpBase, TimestampMixin):  # type: ignore
+class RetryTask(TmpBase, TimestampMixin):
     __tablename__ = "retry_task"
 
     retry_task_id = Column(Integer, primary_key=True)
@@ -38,17 +41,16 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
-    task_type = relationship("TaskType", back_populates="retry_tasks", lazy=True)
-    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy=True)
+    task_type = relationship("TaskType", back_populates="retry_tasks", lazy=False)
+    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy=False)
 
-    def get_task_type_key_values(self, values: List[Tuple[int, str]]) -> List["TaskTypeKeyValue"]:
+    def get_task_type_key_values(self, values: list[Tuple[int, str]]) -> list["TaskTypeKeyValue"]:
         return [
             TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=value)
             for key_id, value in values
         ]
 
-    @property
-    def params(self) -> dict:
+    def get_params(self) -> dict:
         task_params: dict = {}
         for value in self.task_type_key_values:
             key = value.task_type_key
@@ -88,25 +90,24 @@ class RetryTask(TmpBase, TimestampMixin):  # type: ignore
         return f"RetryTask PK: {self.retry_task_id} ({self.task_type.name})"
 
 
-class TaskType(TmpBase, TimestampMixin):  # type: ignore
+class TaskType(TmpBase, TimestampMixin):
     __tablename__ = "task_type"
 
     task_type_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True, unique=True)
     path = Column(String, nullable=False)
 
     retry_tasks = relationship("RetryTask", back_populates="task_type", lazy=True)
-    task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy=True)
+    task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy=False)
 
-    @property
-    def key_ids_by_name(self) -> Dict[str, int]:
+    def get_key_ids_by_name(self) -> Dict[str, int]:
         return {key.name: key.task_type_key_id for key in self.task_type_keys}
 
     def __str__(self) -> str:
         return f"{self.name} (pk={self.task_type_id})"
 
 
-class TaskTypeKey(TmpBase, TimestampMixin):  # type: ignore
+class TaskTypeKey(TmpBase, TimestampMixin):
     __tablename__ = "task_type_key"
 
     task_type_key_id = Column(Integer, primary_key=True)
@@ -118,11 +119,13 @@ class TaskTypeKey(TmpBase, TimestampMixin):  # type: ignore
     task_type = relationship("TaskType", back_populates="task_type_keys", lazy=True)
     task_type_key_values = relationship("TaskTypeKeyValue", back_populates="task_type_key", lazy=True)
 
+    __table_args__ = (UniqueConstraint("name", "task_type_id", name="name_task_type_id_unq"),)
+
     def __str__(self) -> str:
         return f"{self.name} (pk={self.task_type_key_id})"
 
 
-class TaskTypeKeyValue(TmpBase, TimestampMixin):  # type: ignore
+class TaskTypeKeyValue(TmpBase, TimestampMixin):
     __tablename__ = "task_type_key_value"
 
     value = Column(String, nullable=True)
@@ -138,8 +141,8 @@ class TaskTypeKeyValue(TmpBase, TimestampMixin):  # type: ignore
         primary_key=True,
     )
 
-    task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy=True)
-    retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy=True)
+    task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy=False)
+    retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy=False)
 
     def __str__(self) -> str:
         return f"{self.task_type_key.name}: {self.value} (pk={self.retry_task_id},{self.task_type_key_id})"

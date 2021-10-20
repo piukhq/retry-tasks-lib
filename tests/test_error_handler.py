@@ -16,9 +16,9 @@ now = datetime.utcnow()
 
 
 @pytest.fixture(scope="function")
-def handle_request_exception_params(db_session: mock.MagicMock, retry_task: RetryTask) -> dict:
+def handle_request_exception_params(mock_sync_db_session: mock.MagicMock, retry_task: RetryTask) -> dict:
     return {
-        "db_session": db_session,
+        "db_session": mock_sync_db_session,
         "queue": "test_queue",
         "connection": mock.MagicMock(name="connection"),
         "action": mock.MagicMock(name="action"),
