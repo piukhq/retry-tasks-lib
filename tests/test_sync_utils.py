@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task, sync_create_task
+from retry_tasks_lib.utils.synchronous import (
+    enqueue_retry_task,
+    enqueue_retry_task_delay,
+    get_retry_task,
+    sync_create_task,
+)
 
 
 @pytest.fixture(scope="function")
@@ -48,9 +53,26 @@ def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mo
     )
 
 
+def test_enqueue_retry_task(retry_task: RetryTask, mocker: MockerFixture) -> None:
+    MockQueue = mocker.patch("rq.Queue")
+    mock_queue = MockQueue.return_value
+
+    queue = "test_queue"
+    action = mock.MagicMock(name="action")
+
+    enqueue_retry_task(queue=queue, connection=mock.MagicMock(name="connection"), action=action, retry_task=retry_task)
+
+    assert MockQueue.call_args[0] == (queue,)
+    mock_queue.enqueue.assert_called_once_with(
+        action,
+        retry_task_id=retry_task.retry_task_id,
+        failure_ttl=604800,
+    )
+
+
 def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys: TaskType) -> None:
     params = {"task-type-key-str": "astring", "task-type-key-int": 42}
-    retry_task = sync_create_task("task-type", db_session=sync_db_session, params=params)
+    retry_task = sync_create_task(db_session=sync_db_session, task_type_name="task-type", params=params)
     sync_db_session.add(retry_task)
     sync_db_session.commit()
 
