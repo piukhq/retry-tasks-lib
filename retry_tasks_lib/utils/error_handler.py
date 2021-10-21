@@ -65,6 +65,7 @@ def _handle_request_exception(
 
 def handle_request_exception(
     db_session: Session,
+    *,
     queue: str,
     connection: Any,
     action: Callable,

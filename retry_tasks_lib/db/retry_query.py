@@ -17,7 +17,7 @@ logger = logging.getLogger("sqlalchemy-queries")
 # https://stackoverflow.com/a/30004941
 def sync_run_query(
     fn: Callable,
-    session: Session,
+    db_session: Session,
     *,
     attempts: int = DB_CONNECTION_RETRY_TIMES,
     rollback_on_exc: bool = True,
@@ -27,11 +27,11 @@ def sync_run_query(
     while attempts > 0:
         attempts -= 1
         try:
-            return fn(db_session=session, **kwargs)
+            return fn(db_session=db_session, **kwargs)
         except DBAPIError as ex:
             logger.debug(f"Attempt failed: {type(ex).__name__} {ex}")
             if rollback_on_exc:
-                session.rollback()
+                db_session.rollback()
 
             if attempts > 0 and ex.connection_invalidated:
                 logger.warning(f"Interrupted transaction: {repr(ex)}, attempts remaining:{attempts}")
@@ -44,7 +44,7 @@ def sync_run_query(
 
 async def async_run_query(
     fn: Callable,
-    session: "AsyncSession",
+    db_session: AsyncSession,
     *,
     attempts: int = DB_CONNECTION_RETRY_TIMES,
     rollback_on_exc: bool = True,
@@ -53,11 +53,11 @@ async def async_run_query(
     while attempts > 0:
         attempts -= 1
         try:
-            return await fn(db_session=session, **kwargs)
+            return await fn(db_session=db_session, **kwargs)
         except DBAPIError as ex:
             logger.debug(f"Attempt failed: {type(ex).__name__} {ex}")
             if rollback_on_exc:
-                await session.rollback()
+                await db_session.rollback()
 
             if attempts > 0 and ex.connection_invalidated:
                 logger.warning(f"Interrupted transaction: {repr(ex)}, attempts remaining:{attempts}")

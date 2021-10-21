@@ -31,7 +31,13 @@ async def test_enqueue_retry_task(
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_task")
     mock_query.return_value = retry_task
 
-    await enqueue_retry_task(mock_async_db_session, retry_task.retry_task_id, action, queue, mock.MagicMock)
+    await enqueue_retry_task(
+        mock_async_db_session,
+        retry_task_id=retry_task.retry_task_id,
+        action=action,
+        queue=queue,
+        connection=mock.MagicMock(),
+    )
 
     assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
     assert MockQueue.call_args[0] == (queue,)
@@ -56,7 +62,13 @@ async def test_enqueue_retry_task_failed_enqueue(
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_task")
     mock_query.return_value = retry_task
 
-    await enqueue_retry_task(mock_async_db_session, retry_task.retry_task_id, action, queue, mock.MagicMock())
+    await enqueue_retry_task(
+        mock_async_db_session,
+        retry_task_id=retry_task.retry_task_id,
+        action=action,
+        queue=queue,
+        connection=mock.MagicMock(),
+    )
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue.assert_called_once_with(
         action,
@@ -80,7 +92,13 @@ async def test_enqueue_many_retry_tasks(
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
     mock_query.return_value = [retry_task]
 
-    await enqueue_many_retry_tasks(mock_async_db_session, [retry_task.retry_task_id], action, queue, mock.MagicMock)
+    await enqueue_many_retry_tasks(
+        mock_async_db_session,
+        retry_tasks_ids=[retry_task.retry_task_id],
+        action=action,
+        queue=queue,
+        connection=mock.MagicMock(),
+    )
 
     assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
     assert MockQueue.call_args[0] == (queue,)
@@ -106,7 +124,13 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
     mock_query.return_value = [retry_task]
 
-    await enqueue_many_retry_tasks(mock_async_db_session, [retry_task.retry_task_id], action, queue, mock.MagicMock())
+    await enqueue_many_retry_tasks(
+        mock_async_db_session,
+        retry_tasks_ids=[retry_task.retry_task_id],
+        action=action,
+        queue=queue,
+        connection=mock.MagicMock(),
+    )
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue_many.assert_called_once()
     mock_queue.prepare_data.assert_called_once_with(

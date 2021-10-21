@@ -14,12 +14,7 @@ from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
 from . import logger
 
 
-def sync_create_task(
-    db_session: Session,
-    *,
-    task_type_name: str,
-    params: dict[str, Any],
-) -> RetryTask:
+def sync_create_task(db_session: Session, *, task_type_name: str, params: dict[str, Any]) -> RetryTask:
     """Create an uncommited RetryTask object
 
     The function is intended to be called in the context of a sync_run_query
@@ -42,11 +37,11 @@ def sync_create_task(
     return retry_task
 
 
-def _get_retry_task_query(db_session: "Session", retry_task_id: int) -> RetryTask:  # pragma: no cover
+def _get_retry_task_query(db_session: Session, retry_task_id: int) -> RetryTask:  # pragma: no cover
     return db_session.execute(select(RetryTask).where(RetryTask.retry_task_id == retry_task_id)).unique().scalar_one()
 
 
-def get_retry_task(db_session: "Session", retry_task_id: int) -> RetryTask:
+def get_retry_task(db_session: Session, retry_task_id: int) -> RetryTask:
     retry_task: RetryTask = sync_run_query(
         _get_retry_task_query, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
