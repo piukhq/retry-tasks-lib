@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import rq
 
 from sqlalchemy.future import select
+from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import sync_run_query
@@ -11,14 +12,11 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 
 from . import logger
 
-if TYPE_CHECKING:  # pragma: no cover
-    from sqlalchemy.orm import Session
-
 
 def sync_create_task(
-    task_type_name: str,
+    db_session: Session,
     *,
-    db_session: "Session",
+    task_type_name: str,
     params: dict[str, Any],
 ) -> RetryTask:
     """Create an uncommited RetryTask object

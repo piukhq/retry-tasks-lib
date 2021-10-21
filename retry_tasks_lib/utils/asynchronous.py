@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import rq
 import sentry_sdk
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
@@ -11,14 +12,11 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 
 from . import logger
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
 
 async def async_create_task(
-    task_type_name: str,
+    db_session: AsyncSession,
     *,
-    db_session: "AsyncSession",
+    task_type_name: str,
     params: dict,
 ) -> RetryTask:
     """Create an uncommited RetryTask object
