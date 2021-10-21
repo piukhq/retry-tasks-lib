@@ -5,7 +5,7 @@ import sentry_sdk
 
 from sqlalchemy.future import select
 
-from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKeyValue
+from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
 
@@ -27,22 +27,16 @@ async def async_create_task(
     style database wrapper function. It is up to the caller to commit() the
     transaction/session once the object has been returned.
     """
-    task_type = (
+    task_type: TaskType = (
         (await db_session.execute(select(TaskType).where(TaskType.name == task_type_name))).unique().scalar_one()
     )
     retry_task = RetryTask(task_type_id=task_type.task_type_id)
     db_session.add(retry_task)
     await db_session.flush()
     key_ids_by_name = task_type.get_key_ids_by_name()
-    task_type_key_values = [
-        TaskTypeKeyValue(
-            retry_task_id=retry_task.retry_task_id,
-            task_type_key_id=key_ids_by_name[key],
-            value=str(val),
-        )
-        for (key, val) in params.items()
-    ]
-    db_session.add_all(task_type_key_values)
+    db_session.add_all(
+        retry_task.get_task_type_key_values([(key_ids_by_name[key], str(val)) for (key, val) in params.items()])
+    )
     await db_session.flush()
     return retry_task
 

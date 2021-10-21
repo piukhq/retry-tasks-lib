@@ -5,7 +5,7 @@ import rq
 
 from sqlalchemy.future import select
 
-from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKeyValue
+from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
 
@@ -27,16 +27,18 @@ def sync_create_task(
     style database wrapper function. It is up to the caller to commit() the
     transaction/session once the object has been returned.
     """
-    task_type = db_session.execute(select(TaskType).where(TaskType.name == task_type_name)).unique().scalar_one()
+    task_type: TaskType = (
+        db_session.execute(select(TaskType).where(TaskType.name == task_type_name)).unique().scalar_one()
+    )
     retry_task = RetryTask(task_type_id=task_type.task_type_id)
     db_session.add(retry_task)
     db_session.flush()
-    key_ids_by_name: dict[str, int] = task_type.get_key_ids_by_name()
-    task_type_key_values = [
-        TaskTypeKeyValue(retry_task_id=retry_task.retry_task_id, task_type_key_id=key_ids_by_name[key], value=str(val))
-        for key, val in params.items()
-    ]
-    db_session.bulk_save_objects(task_type_key_values)
+    key_ids_by_name = task_type.get_key_ids_by_name()
+
+    db_session.bulk_save_objects(
+        retry_task.get_task_type_key_values([(key_ids_by_name[key], str(val)) for key, val in params.items()])
+    )
+
     db_session.flush()
     return retry_task
 
@@ -69,3 +71,14 @@ def enqueue_retry_task_delay(
 
     logger.info(f"Enqueued task for execution at {next_attempt_time.isoformat()}: {job}")
     return next_attempt_time
+
+
+def enqueue_retry_task(*, queue: str, connection: Any, action: Callable, retry_task: RetryTask) -> None:
+    q = rq.Queue(queue, connection=connection)
+    job = q.enqueue(
+        action,
+        retry_task_id=retry_task.retry_task_id,
+        failure_ttl=60 * 60 * 24 * 7,  # 1 week
+    )
+
+    logger.info(f"Enqueued task for execution: {job}")

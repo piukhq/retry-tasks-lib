@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task, sync_create_task
+from retry_tasks_lib.utils.synchronous import (
+    enqueue_retry_task,
+    enqueue_retry_task_delay,
+    get_retry_task,
+    sync_create_task,
+)
 
 
 @pytest.fixture(scope="function")
@@ -42,6 +47,23 @@ def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mo
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue_at.assert_called_once_with(
         expected_next_attempt_time,
+        action,
+        retry_task_id=retry_task.retry_task_id,
+        failure_ttl=604800,
+    )
+
+
+def test_enqueue_retry_task(retry_task: RetryTask, mocker: MockerFixture) -> None:
+    MockQueue = mocker.patch("rq.Queue")
+    mock_queue = MockQueue.return_value
+
+    queue = "test_queue"
+    action = mock.MagicMock(name="action")
+
+    enqueue_retry_task(queue=queue, connection=mock.MagicMock(name="connection"), action=action, retry_task=retry_task)
+
+    assert MockQueue.call_args[0] == (queue,)
+    mock_queue.enqueue.assert_called_once_with(
         action,
         retry_task_id=retry_task.retry_task_id,
         failure_ttl=604800,
