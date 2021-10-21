@@ -72,7 +72,7 @@ def test_enqueue_retry_task(retry_task: RetryTask, mocker: MockerFixture) -> Non
 
 def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys: TaskType) -> None:
     params = {"task-type-key-str": "astring", "task-type-key-int": 42}
-    retry_task = sync_create_task("task-type", db_session=sync_db_session, params=params)
+    retry_task = sync_create_task(db_session=sync_db_session, task_type_name="task-type", params=params)
     sync_db_session.add(retry_task)
     sync_db_session.commit()
 

@@ -145,8 +145,8 @@ async def test__get_pending_retry_tasks(
 async def test_async_create_task(async_db_session: "AsyncSession", task_type_with_keys: TaskType) -> None:
     params = {"task-type-key-str": "astring", "task-type-key-int": 42}
     retry_task = await async_create_task(
-        "task-type",
         db_session=async_db_session,
+        task_type_name="task-type",
         params=params,
     )
     await async_db_session.commit()

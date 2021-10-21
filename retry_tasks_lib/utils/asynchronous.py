@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import rq
 import sentry_sdk

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import rq
 
