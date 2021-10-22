@@ -41,8 +41,8 @@ class RetryTask(TmpBase, TimestampMixin):
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
-    task_type = relationship("TaskType", back_populates="retry_tasks", lazy=False)
-    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy=False)
+    task_type = relationship("TaskType", back_populates="retry_tasks")
+    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy="joined")
 
     def get_task_type_key_values(self, values: list[Tuple[int, str]]) -> list["TaskTypeKeyValue"]:
         return [
@@ -97,8 +97,8 @@ class TaskType(TmpBase, TimestampMixin):
     name = Column(String, nullable=False, index=True, unique=True)
     path = Column(String, nullable=False)
 
-    retry_tasks = relationship("RetryTask", back_populates="task_type", lazy=True)
-    task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy=False)
+    retry_tasks = relationship("RetryTask", back_populates="task_type")
+    task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy="joined")
 
     def get_key_ids_by_name(self) -> Dict[str, int]:
         return {key.name: key.task_type_key_id for key in self.task_type_keys}
@@ -116,8 +116,8 @@ class TaskTypeKey(TmpBase, TimestampMixin):
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
-    task_type = relationship("TaskType", back_populates="task_type_keys", lazy=True)
-    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="task_type_key", lazy=True)
+    task_type = relationship("TaskType", back_populates="task_type_keys")
+    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="task_type_key")
 
     __table_args__ = (UniqueConstraint("name", "task_type_id", name="name_task_type_id_unq"),)
 
@@ -141,8 +141,8 @@ class TaskTypeKeyValue(TmpBase, TimestampMixin):
         primary_key=True,
     )
 
-    task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy=False)
-    retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy=False)
+    task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy="joined")
+    retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy="joined")
 
     def __str__(self) -> str:
         return f"{self.task_type_key.name}: {self.value} (pk={self.retry_task_id},{self.task_type_key_id})"

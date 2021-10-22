@@ -4,10 +4,12 @@ from unittest import mock
 import pytest
 
 from pytest_mock import MockerFixture
+from sqlalchemy.orm.exc import NoResultFound
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.asynchronous import (
+    _get_pending_retry_task,
     _get_pending_retry_tasks,
     async_create_task,
     enqueue_many_retry_tasks,
@@ -21,37 +23,34 @@ if TYPE_CHECKING:
 @pytest.mark.asyncio
 async def test_enqueue_retry_task(
     mocker: MockerFixture,
-    mock_async_db_session: mock.AsyncMock,
-    retry_task: RetryTask,
+    async_db_session: "AsyncSession",
+    retry_task_async: RetryTask,
 ) -> None:
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
     action = mock.MagicMock(name="action")
     queue = "test_queue"
-    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_task")
-    mock_query.return_value = retry_task
 
     await enqueue_retry_task(
-        mock_async_db_session,
-        retry_task_id=retry_task.retry_task_id,
+        async_db_session,
+        retry_task_id=retry_task_async.retry_task_id,
         action=action,
         queue=queue,
         connection=mock.MagicMock(),
     )
-
-    assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    await async_db_session.refresh(retry_task_async)
+    assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue.assert_called_once_with(
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
     )
-    mock_async_db_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_enqueue_retry_task_failed_enqueue(
-    mocker: MockerFixture, mock_async_db_session: mock.AsyncMock, retry_task: RetryTask
+    mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
 ) -> None:
     mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
     MockQueue = mocker.patch("rq.Queue")
@@ -59,61 +58,60 @@ async def test_enqueue_retry_task_failed_enqueue(
     mock_queue.enqueue.side_effect = Exception("test enqueue exception")
     action = mock.MagicMock(name="action")
     queue = "test_queue"
-    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_task")
-    mock_query.return_value = retry_task
 
     await enqueue_retry_task(
-        mock_async_db_session,
-        retry_task_id=retry_task.retry_task_id,
+        async_db_session,
+        retry_task_id=retry_task_async.retry_task_id,
         action=action,
         queue=queue,
         connection=mock.MagicMock(),
     )
+    await async_db_session.refresh(retry_task_async)
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue.assert_called_once_with(
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
     )
     mock_sentry.capture_exception.assert_called_once()
-    mock_async_db_session.rollback.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_enqueue_many_retry_tasks(
     mocker: MockerFixture,
-    mock_async_db_session: mock.AsyncMock,
-    retry_task: RetryTask,
+    async_db_session: "AsyncSession",
+    retry_task_async: RetryTask,
 ) -> None:
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
     action = mock.MagicMock(name="action")
     queue = "test_queue"
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
-    mock_query.return_value = [retry_task]
+    mock_query.return_value = [retry_task_async]
 
     await enqueue_many_retry_tasks(
-        mock_async_db_session,
-        retry_tasks_ids=[retry_task.retry_task_id],
+        async_db_session,
+        retry_tasks_ids=[retry_task_async.retry_task_id],
         action=action,
         queue=queue,
         connection=mock.MagicMock(),
     )
 
-    assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    await async_db_session.refresh(retry_task_async)
+    assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue_many.assert_called_once()
     mock_queue.prepare_data.assert_called_once_with(
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
     )
-    mock_async_db_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_enqueue_many_retry_tasks_failed_enqueue(
-    mocker: MockerFixture, mock_async_db_session: mock.AsyncMock, retry_task: RetryTask
+    mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
 ) -> None:
     mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
     MockQueue = mocker.patch("rq.Queue")
@@ -122,51 +120,56 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
     action = mock.MagicMock(name="action")
     queue = "test_queue"
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
-    mock_query.return_value = [retry_task]
+    mock_query.return_value = [retry_task_async]
 
     await enqueue_many_retry_tasks(
-        mock_async_db_session,
-        retry_tasks_ids=[retry_task.retry_task_id],
+        async_db_session,
+        retry_tasks_ids=[retry_task_async.retry_task_id],
         action=action,
         queue=queue,
         connection=mock.MagicMock(),
     )
+    await async_db_session.refresh(retry_task_async)
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue_many.assert_called_once()
     mock_queue.prepare_data.assert_called_once_with(
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
     )
     mock_sentry.capture_exception.assert_called_once()
-    mock_async_db_session.rollback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test__get_pending_retry_task(async_db_session: mock.AsyncMock, retry_task_async: RetryTask) -> None:
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
+    with pytest.raises(NoResultFound):
+        await _get_pending_retry_task(async_db_session, 101)
+    await _get_pending_retry_task(async_db_session, retry_task_async.retry_task_id)
 
 
 @pytest.mark.asyncio
 async def test__get_pending_retry_tasks(
-    mocker: MockerFixture, mock_async_db_session: mock.AsyncMock, retry_task: RetryTask
+    mocker: MockerFixture, async_db_session: mock.AsyncMock, retry_task_async: RetryTask
 ) -> None:
-    expected_res: list[RetryTask] = []
     mock_log = mocker.patch("retry_tasks_lib.utils.asynchronous.logger")
-
-    mock_async_db_session.execute.return_value = mock.Mock(scalars=lambda: mock.Mock(all=lambda: expected_res))
-
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
     with pytest.raises(ValueError):
-        await _get_pending_retry_tasks(mock_async_db_session, [retry_task.retry_task_id])
+        await _get_pending_retry_tasks(async_db_session, [101])
 
-    expected_res = [retry_task]
-    await _get_pending_retry_tasks(mock_async_db_session, [retry_task.retry_task_id])
+    await _get_pending_retry_tasks(async_db_session, [retry_task_async.retry_task_id])
     mock_log.error.assert_not_called()
 
-    unexpected_id = retry_task.retry_task_id + 1
-    await _get_pending_retry_tasks(mock_async_db_session, [retry_task.retry_task_id, unexpected_id])
+    unexpected_id = retry_task_async.retry_task_id + 1
+    await _get_pending_retry_tasks(async_db_session, [retry_task_async.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
         f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTaks ids: {set([unexpected_id])}"
     )
 
 
 @pytest.mark.asyncio
-async def test_async_create_task(async_db_session: "AsyncSession", task_type_with_keys: TaskType) -> None:
+async def test_async_create_task(async_db_session: "AsyncSession", task_type_with_keys_async: TaskType) -> None:
     params = {"task-type-key-str": "astring", "task-type-key-int": 42}
     retry_task = await async_create_task(
         db_session=async_db_session,

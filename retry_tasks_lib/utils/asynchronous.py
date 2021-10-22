@@ -5,6 +5,7 @@ import sentry_sdk
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import noload
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
@@ -36,19 +37,16 @@ async def async_create_task(db_session: AsyncSession, *, task_type_name: str, pa
 
 async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
     return (
-        (
-            await db_session.execute(
-                select(RetryTask)
-                .with_for_update()
-                .where(
-                    RetryTask.retry_task_id == retry_task_id,
-                    RetryTask.status == RetryTaskStatuses.PENDING,
-                )
+        await db_session.execute(
+            select(RetryTask)
+            .options(noload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
+            .with_for_update()
+            .where(
+                RetryTask.retry_task_id == retry_task_id,
+                RetryTask.status == RetryTaskStatuses.PENDING,
             )
         )
-        .scalars()
-        .first()
-    )
+    ).scalar_one()
 
 
 async def _get_pending_retry_tasks(
@@ -59,6 +57,7 @@ async def _get_pending_retry_tasks(
         (
             await db_session.execute(
                 select(RetryTask)
+                .options(noload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
