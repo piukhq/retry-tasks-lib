@@ -25,7 +25,7 @@ def fixed_now() -> Generator[datetime, None, None]:
         yield now
 
 
-def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mocker: MockerFixture) -> None:
+def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetime, mocker: MockerFixture) -> None:
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
 
@@ -39,7 +39,7 @@ def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mo
         queue=queue,
         connection=mock.MagicMock(name="connection"),
         action=action,
-        retry_task=retry_task,
+        retry_task=retry_task_sync,
         delay_seconds=backoff_seconds,
     )
 
@@ -48,29 +48,31 @@ def test_enqueue_retry_task_delay(retry_task: RetryTask, fixed_now: datetime, mo
     mock_queue.enqueue_at.assert_called_once_with(
         expected_next_attempt_time,
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_sync.retry_task_id,
         failure_ttl=604800,
     )
 
 
-def test_enqueue_retry_task(retry_task: RetryTask, mocker: MockerFixture) -> None:
+def test_enqueue_retry_task(retry_task_sync: RetryTask, mocker: MockerFixture) -> None:
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
 
     queue = "test_queue"
     action = mock.MagicMock(name="action")
 
-    enqueue_retry_task(queue=queue, connection=mock.MagicMock(name="connection"), action=action, retry_task=retry_task)
+    enqueue_retry_task(
+        queue=queue, connection=mock.MagicMock(name="connection"), action=action, retry_task=retry_task_sync
+    )
 
     assert MockQueue.call_args[0] == (queue,)
     mock_queue.enqueue.assert_called_once_with(
         action,
-        retry_task_id=retry_task.retry_task_id,
+        retry_task_id=retry_task_sync.retry_task_id,
         failure_ttl=604800,
     )
 
 
-def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys: TaskType) -> None:
+def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys_sync: TaskType) -> None:
     params = {"task-type-key-str": "astring", "task-type-key-int": 42}
     retry_task = sync_create_task(db_session=sync_db_session, task_type_name="task-type", params=params)
     sync_db_session.add(retry_task)
@@ -92,3 +94,9 @@ def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_ty
         sync_db_session.commit()
         with pytest.raises(ValueError):
             get_retry_task(sync_db_session, retry_task.retry_task_id)
+
+
+def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) -> None:
+    retry_task_sync.status = RetryTaskStatuses.IN_PROGRESS
+    sync_db_session.commit()
+    get_retry_task(db_session=sync_db_session, retry_task_id=retry_task_sync.retry_task_id)
