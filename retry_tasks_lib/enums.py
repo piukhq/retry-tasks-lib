@@ -16,6 +16,7 @@ class RetryTaskStatuses(Enum):
     SUCCESS = "success"
     WAITING = "waiting"
     CANCELLED = "cancelled"
+    REQUEUED = "requeued"
 
 
 class TaskParamsKeyTypes(Enum):

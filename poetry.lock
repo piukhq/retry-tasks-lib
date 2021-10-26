@@ -777,6 +777,14 @@ python-versions = ">=3.7"
 test = ["pytest"]
 
 [[package]]
+name = "types-redis"
+version = "3.5.15"
+description = "Typing stubs for redis"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "types-requests"
 version = "2.25.9"
 description = "Typing stubs for requests"
@@ -856,7 +864,7 @@ requests = ">=2.0,<3.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "8a196870bbf0e040b2e644500c01e7fbe78af95500edcc371aab7fe86d05ddb5"
+content-hash = "4300fe8de1ac7df2554c62e87aee286d6c7f4d354dc5f51e434ffbd6d1959486"
 
 [metadata.files]
 appnope = [
@@ -1397,6 +1405,10 @@ tomli = [
 traitlets = [
     {file = "traitlets-5.1.0-py3-none-any.whl", hash = "sha256:03f172516916220b58c9f19d7f854734136dd9528103d04e9bf139a92c9f54c4"},
     {file = "traitlets-5.1.0.tar.gz", hash = "sha256:bd382d7ea181fbbcce157c133db9a829ce06edffe097bcf3ab945b435452b46d"},
+]
+types-redis = [
+    {file = "types-redis-3.5.15.tar.gz", hash = "sha256:e52be0077ca1189d8cce813a20c2a70e9e577f34ab898371c6cbed696a88bdee"},
+    {file = "types_redis-3.5.15-py3-none-any.whl", hash = "sha256:e617c08bff88449b52f6dbdaa9bb81a806f27c89fd30bbf98fe9683ed5d1046a"},
 ]
 types-requests = [
     {file = "types-requests-2.25.9.tar.gz", hash = "sha256:4ec8b71da73e5344adb9bee725a74ec8598e7286f9bcb17500d627f259fe4fb9"},
