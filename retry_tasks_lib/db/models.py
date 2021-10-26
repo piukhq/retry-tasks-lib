@@ -96,6 +96,7 @@ class TaskType(TmpBase, TimestampMixin):
     task_type_id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, index=True, unique=True)
     path = Column(String, nullable=False)
+    queue_name = Column(String, nullable=False)
 
     retry_tasks = relationship("RetryTask", back_populates="task_type")
     task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy="joined")

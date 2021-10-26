@@ -74,7 +74,7 @@ def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
 def task_type_with_keys_sync(
     sync_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
-    tt = TaskType(name="task-type", path="path.to.func")
+    tt = TaskType(name="task-type", path="path.to.func", queue_name="queue-name")
     sync_db_session.add(tt)
     sync_db_session.flush()
     ttks: list[TaskTypeKey] = [
@@ -103,7 +103,7 @@ def retry_task_sync(sync_db_session: "Session", task_type_with_keys_sync: TaskTy
 async def task_type_with_keys_async(
     async_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
-    tt = TaskType(name="task-type", path="path.to.func")
+    tt = TaskType(name="task-type", path="path.to.func", queue_name="queue-name")
     async_db_session.add(tt)
     await async_db_session.flush()
     ttks: list[TaskTypeKey] = [
