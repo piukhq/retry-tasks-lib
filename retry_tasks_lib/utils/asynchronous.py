@@ -1,11 +1,13 @@
-from typing import Any, Callable
+from collections import defaultdict
+from typing import Any, DefaultDict
 
 import rq
 import sentry_sdk
 
+from rq.queue import EnqueueData
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import noload
+from sqlalchemy.orm import noload, selectinload
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
@@ -39,7 +41,7 @@ async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) 
     return (
         await db_session.execute(
             select(RetryTask)
-            .options(noload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
+            .options(selectinload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
             .with_for_update()
             .where(
                 RetryTask.retry_task_id == retry_task_id,
@@ -49,15 +51,13 @@ async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) 
     ).scalar_one()
 
 
-async def _get_pending_retry_tasks(
-    db_session: AsyncSession, retry_tasks_ids: list[int]
-) -> list[RetryTask]:  # pragma: no cover
+async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> list[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
             await db_session.execute(
                 select(RetryTask)
-                .options(noload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
+                .options(selectinload(RetryTask.task_type), noload(RetryTask.task_type_key_values))
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
@@ -104,19 +104,17 @@ async def _rollback(db_session: AsyncSession) -> None:
     await db_session.rollback()
 
 
-async def enqueue_retry_task(
-    db_session: AsyncSession, *, retry_task_id: int, action: Callable, queue: str, connection: Any
-) -> None:
+async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, connection: Any) -> None:
 
     try:
-        q = rq.Queue(queue, connection=connection)
         retry_task = await async_run_query(
             _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
         )
+        q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
         await async_run_query(_update_status_and_flush, db_session, retry_task=retry_task)
         q.enqueue(
-            action,
-            retry_task_id=retry_task_id,
+            retry_task.task_type.path,
+            retry_task_id=retry_task.retry_task_id,
             failure_ttl=60 * 60 * 24 * 7,  # 1 week
         )
         await async_run_query(_commit, db_session, rollback_on_exc=False)
@@ -125,27 +123,38 @@ async def enqueue_retry_task(
         await async_run_query(_rollback, db_session, rollback_on_exc=False)
 
 
-async def enqueue_many_retry_tasks(
-    db_session: AsyncSession, *, retry_tasks_ids: list[int], action: Callable, queue: str, connection: Any
-) -> None:
+async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: Any) -> None:
     try:
-        q = rq.Queue(queue, connection=connection)
         retry_tasks: list[RetryTask] = await async_run_query(
-            _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_task_ids=retry_tasks_ids
+            _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
         )
 
-        await async_run_query(_update_many_statuses_and_flush, db_session, retry_tasks=retry_tasks)
-        q.enqueue_many(
-            [
-                q.prepare_data(
-                    action,
-                    retry_task_id=retry_task.retry_task_id,
-                    failure_ttl=60 * 60 * 24 * 7,  # 1 week
+        tasks_by_queue: DefaultDict[str, list[RetryTask]] = defaultdict(list)
+        for task in retry_tasks:
+            tasks_by_queue[task.task_type.queue_name].append(task)
+
+        pipeline = connection.pipeline()
+        queued_jobs: list[rq.job.Job] = []
+        for queue_name, tasks in tasks_by_queue.items():
+            q = rq.Queue(queue_name, connection=connection)
+            prepared: list[EnqueueData] = []
+            for task in tasks:
+                prepared.append(
+                    rq.Queue.prepare_data(
+                        task.task_type.path,
+                        kwargs={"retry_task_id": task.retry_task_id},
+                        failure_ttl=60 * 60 * 24 * 7,  # 1 week
+                    )
                 )
-                for retry_task in retry_tasks
-            ]
-        )
+
+            jobs = q.enqueue_many(prepared, pipeline=pipeline)
+            queued_jobs.extend(jobs)
+
+        await async_run_query(_update_many_statuses_and_flush, db_session, retry_tasks=retry_tasks)
+        pipeline.execute()
+        logger.info(f"Queued {len(queued_jobs)} jobs.")
         await async_run_query(_commit, db_session, rollback_on_exc=False)
+
     except Exception as ex:
         sentry_sdk.capture_exception(ex)
         await async_run_query(_rollback, db_session, rollback_on_exc=False)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import requests
 import rq
@@ -15,9 +15,7 @@ from .synchronous import enqueue_retry_task_delay, get_retry_task
 
 
 def _handle_request_exception(
-    queue: str,
     connection: Any,
-    action: Callable,
     backoff_base: int,
     max_retries: int,
     retry_task: RetryTask,
@@ -27,7 +25,7 @@ def _handle_request_exception(
     next_attempt_time = None
     subject = retry_task.task_type.name
     terminal = False
-    response_audit: Dict[str, Any] = {"error": str(request_exception), "timestamp": datetime.utcnow().isoformat()}
+    response_audit: dict[str, Any] = {"error": str(request_exception), "timestamp": datetime.utcnow().isoformat()}
 
     if request_exception.response is not None:
         response_audit["response"] = {
@@ -40,9 +38,7 @@ def _handle_request_exception(
     if retry_task.attempts < max_retries:
         if request_exception.response is None or (500 <= request_exception.response.status_code < 600):
             next_attempt_time = enqueue_retry_task_delay(
-                queue=queue,
                 connection=connection,
-                action=action,
                 retry_task=retry_task,
                 delay_seconds=pow(backoff_base, float(retry_task.attempts)) * 60,
             )
@@ -66,9 +62,7 @@ def _handle_request_exception(
 def handle_request_exception(
     db_session: Session,
     *,
-    queue: str,
     connection: Any,
-    action: Callable,
     backoff_base: int,
     max_retries: int,
     job: rq.job.Job,
@@ -82,7 +76,11 @@ def handle_request_exception(
 
     if isinstance(exc_value, requests.RequestException):  # handle http failures specifically
         response_audit, status, next_attempt_time = _handle_request_exception(
-            queue, connection, action, backoff_base, max_retries, retry_task, exc_value
+            connection,
+            backoff_base,
+            max_retries,
+            retry_task,
+            exc_value,
         )
     else:  # otherwise report to sentry and fail the task
         status = RetryTaskStatuses.FAILED

@@ -2,8 +2,10 @@ from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
+import rq
 
 from pytest_mock import MockerFixture
+from redis import Redis
 from sqlalchemy.orm.exc import NoResultFound
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
@@ -15,6 +17,7 @@ from retry_tasks_lib.utils.asynchronous import (
     enqueue_many_retry_tasks,
     enqueue_retry_task,
 )
+from tests.db import AsyncSessionMaker
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,30 +25,22 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 async def test_enqueue_retry_task(
-    mocker: MockerFixture,
     async_db_session: "AsyncSession",
     retry_task_async: RetryTask,
+    redis: Redis,
 ) -> None:
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
-    action = mock.MagicMock(name="action")
-    queue = "test_queue"
 
+    q = rq.Queue(retry_task_async.task_type.queue_name, connection=redis)
+    assert len(q.jobs) == 0
     await enqueue_retry_task(
         async_db_session,
         retry_task_id=retry_task_async.retry_task_id,
-        action=action,
-        queue=queue,
-        connection=mock.MagicMock(),
+        connection=redis,
     )
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
-    assert MockQueue.call_args[0] == (queue,)
-    mock_queue.enqueue.assert_called_once_with(
-        action,
-        retry_task_id=retry_task_async.retry_task_id,
-        failure_ttl=604800,
-    )
+    job = q.jobs[0]
+    assert job.kwargs == {"retry_task_id": 1}
 
 
 @pytest.mark.asyncio
@@ -56,21 +51,20 @@ async def test_enqueue_retry_task_failed_enqueue(
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
     mock_queue.enqueue.side_effect = Exception("test enqueue exception")
-    action = mock.MagicMock(name="action")
-    queue = "test_queue"
 
-    await enqueue_retry_task(
-        async_db_session,
-        retry_task_id=retry_task_async.retry_task_id,
-        action=action,
-        queue=queue,
-        connection=mock.MagicMock(),
-    )
+    # Provide a different session here as the exception rolls back the fixture
+    # session making it unusable in an async context
+    async with AsyncSessionMaker() as session:
+        await enqueue_retry_task(
+            session,
+            retry_task_id=retry_task_async.retry_task_id,
+            connection=mock.MagicMock(),
+        )
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert MockQueue.call_args[0] == (queue,)
+    assert MockQueue.call_args[0] == (retry_task_async.task_type.queue_name,)
     mock_queue.enqueue.assert_called_once_with(
-        action,
+        retry_task_async.task_type.path,
         retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
     )
@@ -79,34 +73,22 @@ async def test_enqueue_retry_task_failed_enqueue(
 
 @pytest.mark.asyncio
 async def test_enqueue_many_retry_tasks(
-    mocker: MockerFixture,
-    async_db_session: "AsyncSession",
-    retry_task_async: RetryTask,
+    async_db_session: "AsyncSession", retry_task_async: RetryTask, redis: Redis
 ) -> None:
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
-    action = mock.MagicMock(name="action")
-    queue = "test_queue"
-    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
-    mock_query.return_value = [retry_task_async]
+    q = rq.Queue(retry_task_async.task_type.queue_name, connection=redis)
+    assert len(q.jobs) == 0
 
     await enqueue_many_retry_tasks(
         async_db_session,
         retry_tasks_ids=[retry_task_async.retry_task_id],
-        action=action,
-        queue=queue,
-        connection=mock.MagicMock(),
+        connection=redis,
     )
 
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
-    assert MockQueue.call_args[0] == (queue,)
-    mock_queue.enqueue_many.assert_called_once()
-    mock_queue.prepare_data.assert_called_once_with(
-        action,
-        retry_task_id=retry_task_async.retry_task_id,
-        failure_ttl=604800,
-    )
+    assert len(q.get_job_ids()) == 1
+    job = q.jobs[0]
+    assert job.kwargs == {"retry_task_id": 1}
 
 
 @pytest.mark.asyncio
@@ -117,25 +99,24 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
     MockQueue = mocker.patch("rq.Queue")
     mock_queue = MockQueue.return_value
     mock_queue.enqueue_many.side_effect = Exception("test enqueue exception")
-    action = mock.MagicMock(name="action")
-    queue = "test_queue"
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
     mock_query.return_value = [retry_task_async]
 
-    await enqueue_many_retry_tasks(
-        async_db_session,
-        retry_tasks_ids=[retry_task_async.retry_task_id],
-        action=action,
-        queue=queue,
-        connection=mock.MagicMock(),
-    )
+    # Provide a different session here as the exception rolls back the fixture
+    # session making it unusable in an async context
+    async with AsyncSessionMaker() as session:
+        await enqueue_many_retry_tasks(
+            session,
+            retry_tasks_ids=[retry_task_async.retry_task_id],
+            connection=mock.MagicMock(),
+        )
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert MockQueue.call_args[0] == (queue,)
+    assert MockQueue.call_args[0] == (retry_task_async.task_type.queue_name,)
     mock_queue.enqueue_many.assert_called_once()
-    mock_queue.prepare_data.assert_called_once_with(
-        action,
-        retry_task_id=retry_task_async.retry_task_id,
+    MockQueue.prepare_data.assert_called_once_with(
+        retry_task_async.task_type.path,
+        kwargs={"retry_task_id": retry_task_async.retry_task_id},
         failure_ttl=604800,
     )
     mock_sentry.capture_exception.assert_called_once()

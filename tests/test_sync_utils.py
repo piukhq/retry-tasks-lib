@@ -3,8 +3,9 @@ from typing import Generator
 from unittest import mock
 
 import pytest
+import rq
 
-from pytest_mock import MockerFixture
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
@@ -25,51 +26,32 @@ def fixed_now() -> Generator[datetime, None, None]:
         yield now
 
 
-def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetime, mocker: MockerFixture) -> None:
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
-
+def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetime, redis: Redis) -> None:
     backoff_seconds = 60.0
-    queue = "test_queue"
-    action = mock.MagicMock(name="action")
-
     expected_next_attempt_time = fixed_now.replace(tzinfo=timezone.utc) + timedelta(seconds=backoff_seconds)
 
+    q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
+    assert len(q.scheduled_job_registry.get_job_ids()) == 0
+
     next_attempt_time = enqueue_retry_task_delay(
-        queue=queue,
-        connection=mock.MagicMock(name="connection"),
-        action=action,
+        connection=redis,
         retry_task=retry_task_sync,
         delay_seconds=backoff_seconds,
     )
-
     assert next_attempt_time == expected_next_attempt_time
-    assert MockQueue.call_args[0] == (queue,)
-    mock_queue.enqueue_at.assert_called_once_with(
-        expected_next_attempt_time,
-        action,
-        retry_task_id=retry_task_sync.retry_task_id,
-        failure_ttl=604800,
-    )
+    assert len(q.scheduled_job_registry.get_job_ids()) == 1
+    job = rq.job.Job.fetch(q.scheduled_job_registry.get_job_ids()[0], connection=redis)
+    assert job.kwargs == {"retry_task_id": 1}
 
 
-def test_enqueue_retry_task(retry_task_sync: RetryTask, mocker: MockerFixture) -> None:
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
-
-    queue = "test_queue"
-    action = mock.MagicMock(name="action")
-
-    enqueue_retry_task(
-        queue=queue, connection=mock.MagicMock(name="connection"), action=action, retry_task=retry_task_sync
-    )
-
-    assert MockQueue.call_args[0] == (queue,)
-    mock_queue.enqueue.assert_called_once_with(
-        action,
-        retry_task_id=retry_task_sync.retry_task_id,
-        failure_ttl=604800,
-    )
+def test_enqueue_retry_task(retry_task_sync: RetryTask, redis: Redis) -> None:
+    q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
+    assert len(q.jobs) == 0
+    enqueue_retry_task(connection=redis, retry_task=retry_task_sync)
+    assert len(q.jobs) == 1
+    job = q.jobs[0]
+    assert job.kwargs == {"retry_task_id": 1}
+    assert job.failure_ttl == 604800
 
 
 def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys_sync: TaskType) -> None:

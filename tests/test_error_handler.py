@@ -30,9 +30,7 @@ def errored_retry_task(retry_task_sync: RetryTask, sync_db_session: "Session") -
 def handle_request_exception_params(mock_sync_db_session: mock.MagicMock, errored_retry_task: RetryTask) -> dict:
     return {
         "db_session": mock_sync_db_session,
-        "queue": "test_queue",
         "connection": mock.MagicMock(name="connection"),
-        "action": mock.MagicMock(name="action"),
         "backoff_base": 3,
         "max_retries": 3,
         "job": mock.MagicMock(spec=rq.job.Job, kwargs={"retry_task_id": errored_retry_task.retry_task_id}),
@@ -97,9 +95,7 @@ def test_handle_error_http_5xx(
     assert errored_retry_task.audit_data[0]["response"]["status"] == 500
     mock_flag_modified.assert_called_once()
     mock_enqueue.assert_called_once_with(
-        queue=handle_request_exception_params["queue"],
         connection=handle_request_exception_params["connection"],
-        action=handle_request_exception_params["action"],
         retry_task=errored_retry_task,
         delay_seconds=180.0,
     )
@@ -131,9 +127,7 @@ def test_handle_error_http_timeout(
     assert errored_retry_task.audit_data[0]["error"] == "Request timed out"
     mock_flag_modified.assert_called_once()
     mock_enqueue.assert_called_once_with(
-        queue=handle_request_exception_params["queue"],
         connection=handle_request_exception_params["connection"],
-        action=handle_request_exception_params["action"],
         retry_task=errored_retry_task,
         delay_seconds=180.0,
     )
