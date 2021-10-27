@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any
 
 import rq
 
@@ -53,27 +53,23 @@ def get_retry_task(db_session: Session, retry_task_id: int) -> RetryTask:
 
 def enqueue_retry_task_delay(
     *,
-    queue: str,
     connection: Any,
-    action: Callable,
     retry_task: RetryTask,
     delay_seconds: float,
     failure_ttl: int = DEFAULT_FAILURE_TTL,
 ) -> datetime:
-    q = rq.Queue(queue, connection=connection)
+    q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
     next_attempt_time = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(seconds=delay_seconds)
     job = q.enqueue_at(  # requires rq worker --with-scheduler
-        next_attempt_time, action, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl
+        next_attempt_time, retry_task.task_type.path, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl
     )
 
     logger.info(f"Enqueued task for execution at {next_attempt_time.isoformat()}: {job}")
     return next_attempt_time
 
 
-def enqueue_retry_task(
-    *, queue: str, connection: Any, action: Callable, retry_task: RetryTask, failure_ttl: int = DEFAULT_FAILURE_TTL
-) -> None:
-    q = rq.Queue(queue, connection=connection)
-    job = q.enqueue(action, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl)
+def enqueue_retry_task(*, connection: Any, retry_task: RetryTask, failure_ttl: int = DEFAULT_FAILURE_TTL) -> None:
+    q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
+    job = q.enqueue(retry_task.task_type.path, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl)
 
     logger.info(f"Enqueued task for execution: {job}")

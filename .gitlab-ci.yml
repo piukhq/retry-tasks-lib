@@ -6,6 +6,7 @@ variables:
   POSTGRES_DB: retry_tasks_lib_test
   POSTGRES_HOST_AUTH_METHOD: trust
   SQLALCHEMY_DATABASE_URI: "postgresql+asyncpg://postgres@postgres:5432/retry_tasks_lib_test"
+  REDIS_URL: redis://redis:6379/0
 
 default:
   image: ghcr.io/binkhq/python:3.9

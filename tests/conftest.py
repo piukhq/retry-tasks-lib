@@ -3,13 +3,26 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from redis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy_utils import create_database, database_exists, drop_database
 
 from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKey, TmpBase
 from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
-from tests.db import POSTGRES_DB, AsyncSessionMaker, SyncSessionMaker, sync_engine
+from tests.db import POSTGRES_DB, REDIS_URL, AsyncSessionMaker, SyncSessionMaker, sync_engine
+
+
+@pytest.fixture(scope="function")
+def redis() -> Generator:
+    redis = Redis.from_url(
+        REDIS_URL,
+        socket_connect_timeout=3,
+        socket_keepalive=True,
+        retry_on_timeout=False,
+    )
+    yield redis
+    redis.flushdb()
 
 
 @pytest.fixture(scope="function")
