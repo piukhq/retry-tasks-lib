@@ -21,6 +21,7 @@ def redis() -> Generator:
         socket_keepalive=True,
         retry_on_timeout=False,
     )
+    redis.flushdb()
     yield redis
     redis.flushdb()
 

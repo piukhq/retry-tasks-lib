@@ -41,6 +41,7 @@ async def test_enqueue_retry_task(
     assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
+    assert job.func_name == retry_task_async.task_type.path
 
 
 @pytest.mark.asyncio
@@ -89,6 +90,7 @@ async def test_enqueue_many_retry_tasks(
     assert len(q.get_job_ids()) == 1
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
+    assert job.func_name == retry_task_async.task_type.path
 
 
 @pytest.mark.asyncio

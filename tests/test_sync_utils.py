@@ -42,6 +42,7 @@ def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetim
     assert len(q.scheduled_job_registry.get_job_ids()) == 1
     job = rq.job.Job.fetch(q.scheduled_job_registry.get_job_ids()[0], connection=redis)
     assert job.kwargs == {"retry_task_id": 1}
+    assert job.func_name == retry_task_sync.task_type.path
 
 
 def test_enqueue_retry_task(retry_task_sync: RetryTask, redis: Redis) -> None:
@@ -52,6 +53,7 @@ def test_enqueue_retry_task(retry_task_sync: RetryTask, redis: Redis) -> None:
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
     assert job.failure_ttl == 604800
+    assert job.func_name == retry_task_sync.task_type.path
 
 
 def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_type_with_keys_sync: TaskType) -> None:
