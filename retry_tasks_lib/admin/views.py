@@ -57,7 +57,7 @@ class RetryTaskAdminBase(ModelView):
                 [
                     '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(
                         url_for(
-                            f"{view.endpoint_prefix}/task_type_key_values.details_view",
+                            f"{view.endpoint_prefix}/task-type-key-values.details_view",
                             id=f"{value.retry_task_id},{value.task_type_key_id}",
                         ),
                         value.task_type_key.name,
