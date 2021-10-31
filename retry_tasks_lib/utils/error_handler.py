@@ -1,5 +1,7 @@
+import importlib
+
 from datetime import datetime
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 import requests
 import rq
@@ -7,11 +9,13 @@ import sentry_sdk
 
 from sqlalchemy.orm.session import Session
 
+from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
+from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task
 
-from . import logger
-from .synchronous import enqueue_retry_task_delay, get_retry_task
+if TYPE_CHECKING:  # pragma: no cover
+    from inspect import Traceback
 
 
 def _handle_request_exception(
@@ -93,3 +97,19 @@ def handle_request_exception(
         status=status,
         clear_next_attempt_time=True,
     )
+
+
+def job_meta_handler(job: rq.job.Job, exc_type: type, exc_value: Exception, traceback: "Traceback") -> bool:
+    """Resolves any error handler stored in job.meta.
+
+    Falls back to the default RQ error handler (unless worker
+    disable_default_exception_handler flag is set)"""
+    if error_handler_path := job.meta.get("error_handler_path"):
+        try:
+            mod, func = error_handler_path.rsplit(".", 1)
+            mod = importlib.import_module(mod)
+            handler = getattr(mod, func)
+            return handler(job, exc_type, exc_value, traceback)
+        except (ValueError, ModuleNotFoundError, AttributeError) as ex:
+            logger.warning(f"Could not import error handler for job {job} (meta={job.meta}): {ex}")
+    return True

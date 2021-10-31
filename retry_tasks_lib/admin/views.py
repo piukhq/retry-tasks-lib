@@ -121,7 +121,8 @@ class RetryTaskAdminBase(ModelView):
 
 class TaskTypeAdminBase(ModelView):
     column_searchable_list = ("name",)
-    form_columns = ("name", "path")
+    column_filters = ("queue_name",)
+    form_columns = ("name", "queue_name", "path", "error_handler_path")
 
 
 class TaskTypeKeyAdminBase(ModelView):

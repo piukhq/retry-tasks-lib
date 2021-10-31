@@ -42,6 +42,7 @@ async def test_enqueue_retry_task(
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
     assert job.func_name == retry_task_async.task_type.path
+    assert job.meta == {"error_handler_path": "path.to.error_handler"}
 
 
 @pytest.mark.asyncio
@@ -68,6 +69,7 @@ async def test_enqueue_retry_task_failed_enqueue(
         retry_task_async.task_type.path,
         retry_task_id=retry_task_async.retry_task_id,
         failure_ttl=604800,
+        meta={"error_handler_path": "path.to.error_handler"},
     )
     mock_sentry.capture_exception.assert_called_once()
 
@@ -91,6 +93,7 @@ async def test_enqueue_many_retry_tasks(
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
     assert job.func_name == retry_task_async.task_type.path
+    assert job.meta == {"error_handler_path": "path.to.error_handler"}
 
 
 @pytest.mark.asyncio
@@ -120,6 +123,7 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
         retry_task_async.task_type.path,
         kwargs={"retry_task_id": retry_task_async.retry_task_id},
         failure_ttl=604800,
+        meta={"error_handler_path": "path.to.error_handler"},
     )
     mock_sentry.capture_exception.assert_called_once()
 
