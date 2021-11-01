@@ -10,9 +10,10 @@ from pytest_mock import MockerFixture
 
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.utils.error_handler import handle_request_exception
+from retry_tasks_lib.utils.error_handler import handle_request_exception, job_meta_handler
 
 now = datetime.utcnow()
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -186,3 +187,65 @@ def test_handle_error_unhandled_exception(
     mock_flag_modified.assert_not_called()
     assert errored_retry_task.status == RetryTaskStatuses.FAILED
     assert errored_retry_task.next_attempt_time is None
+
+
+fake_handler = mock.MagicMock()
+
+
+@pytest.fixture
+def fake_handler_resetter() -> None:
+    fake_handler.reset_mock()
+
+
+def test_job_meta_handler(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock(meta={"error_handler_path": "tests.test_error_handler.fake_handler"})
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    job_meta_handler(job, exc_type, exc_value, traceback)
+
+    fake_handler.assert_called_once_with(job, exc_type, exc_value, traceback)
+
+
+def test_job_meta_handler_bad_module(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock(meta={"error_handler_path": "no.module.here.fake_handler"})
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    assert job_meta_handler(job, exc_type, exc_value, traceback) is True
+
+    fake_handler.assert_not_called()
+
+
+def test_job_meta_handler_bad_func(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock(meta={"error_handler_path": "tests.test_error_handler.no_handler_here"})
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    assert job_meta_handler(job, exc_type, exc_value, traceback) is True
+
+    fake_handler.assert_not_called()
+
+
+def test_job_meta_handler_empty_path(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock(meta={"error_handler_path": ""})
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    assert job_meta_handler(job, exc_type, exc_value, traceback) is True
+
+    fake_handler.assert_not_called()
+
+
+def test_job_meta_handler_nonetype_path(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock(meta={"error_handler_path": None})
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    assert job_meta_handler(job, exc_type, exc_value, traceback) is True
+
+    fake_handler.assert_not_called()
+
+
+def test_job_meta_handler_no_meta(fake_handler_resetter: None) -> None:
+    job = mock.MagicMock()
+    exc_type, exc_value, traceback = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+
+    assert job_meta_handler(job, exc_type, exc_value, traceback) is True
+
+    fake_handler.assert_not_called()

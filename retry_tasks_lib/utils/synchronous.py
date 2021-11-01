@@ -6,12 +6,11 @@ import rq
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
+from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
-
-from . import logger
 
 
 def sync_create_task(db_session: Session, *, task_type_name: str, params: dict[str, Any]) -> RetryTask:
@@ -61,7 +60,11 @@ def enqueue_retry_task_delay(
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
     next_attempt_time = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(seconds=delay_seconds)
     job = q.enqueue_at(  # requires rq worker --with-scheduler
-        next_attempt_time, retry_task.task_type.path, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl
+        next_attempt_time,
+        retry_task.task_type.path,
+        retry_task_id=retry_task.retry_task_id,
+        failure_ttl=failure_ttl,
+        meta={"error_handler_path": retry_task.task_type.error_handler_path},
     )
 
     logger.info(f"Enqueued task for execution at {next_attempt_time.isoformat()}: {job}")
@@ -70,6 +73,11 @@ def enqueue_retry_task_delay(
 
 def enqueue_retry_task(*, connection: Any, retry_task: RetryTask, failure_ttl: int = DEFAULT_FAILURE_TTL) -> None:
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
-    job = q.enqueue(retry_task.task_type.path, retry_task_id=retry_task.retry_task_id, failure_ttl=failure_ttl)
+    job = q.enqueue(
+        retry_task.task_type.path,
+        retry_task_id=retry_task.retry_task_id,
+        failure_ttl=failure_ttl,
+        meta={"error_handler_path": retry_task.task_type.error_handler_path},
+    )
 
     logger.info(f"Enqueued task for execution: {job}")

@@ -9,11 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import noload, selectinload
 
+from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
-
-from . import logger
 
 
 async def async_create_task(db_session: AsyncSession, *, task_type_name: str, params: dict) -> RetryTask:
@@ -105,7 +104,6 @@ async def _rollback(db_session: AsyncSession) -> None:
 
 
 async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, connection: Any) -> None:
-
     try:
         retry_task = await async_run_query(
             _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
@@ -116,6 +114,7 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
             retry_task.task_type.path,
             retry_task_id=retry_task.retry_task_id,
             failure_ttl=60 * 60 * 24 * 7,  # 1 week
+            meta={"error_handler_path": retry_task.task_type.error_handler_path},
         )
         await async_run_query(_commit, db_session, rollback_on_exc=False)
     except Exception as ex:
@@ -143,6 +142,7 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
                     rq.Queue.prepare_data(
                         task.task_type.path,
                         kwargs={"retry_task_id": task.retry_task_id},
+                        meta={"error_handler_path": task.task_type.error_handler_path},
                         failure_ttl=60 * 60 * 24 * 7,  # 1 week
                     )
                 )
