@@ -69,7 +69,6 @@ def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_ty
         assert retry_task.get_params() == params
 
     for status in (
-        RetryTaskStatuses.PENDING,
         RetryTaskStatuses.FAILED,
         RetryTaskStatuses.SUCCESS,
         RetryTaskStatuses.CANCELLED,
