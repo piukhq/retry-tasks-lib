@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "retry-tasks-lib"
-version = "1.8.0"
+version = "1.8.1"
 description = "helpers functions and models for setting up tasks with rq"
 authors = ["Bink <bink@bink.bink>"]
 readme = "README.md"
