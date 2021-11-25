@@ -1,18 +1,18 @@
 import json
 
+from collections import defaultdict
 from typing import Optional
-
-import rq
 
 from flask import Markup, flash, url_for
 from flask_admin.actions import action
 from flask_admin.contrib.sqla import ModelView
 from redis import Redis
 from sqlalchemy.future import select
-from sqlalchemy.orm import lazyload
+from sqlalchemy.orm import selectinload
 
 from retry_tasks_lib.db.models import RetryTask
-from retry_tasks_lib.utils.synchronous import sync_create_task
+from retry_tasks_lib.enums import RetryTaskStatuses
+from retry_tasks_lib.utils.synchronous import enqueue_many_retry_tasks, sync_create_many_tasks
 
 
 class RetryTaskAdminBase(ModelView):
@@ -71,12 +71,11 @@ class RetryTaskAdminBase(ModelView):
         % json.dumps(model.audit_data, indent=4, sort_keys=True),
     }
 
-    @action("requeue", "Requeue", "Are you sure you want to requeue selected FAILED tasks?")
-    def action_requeue_tasks(self, ids: list[str]) -> None:
-        tasks = (
+    def get_failed_tasks(self, ids: list[str]) -> list[RetryTask]:
+        return (
             self.session.execute(
                 select(RetryTask)
-                .options(lazyload(RetryTask.task_type_key_values))
+                .options(selectinload(RetryTask.task_type_key_values))
                 .with_for_update()
                 .where(RetryTask.retry_task_id.in_(ids))
                 .where(RetryTask.status == "FAILED")
@@ -84,39 +83,49 @@ class RetryTaskAdminBase(ModelView):
             .scalars()
             .all()
         )
-        if tasks:
-            new_tasks: list[RetryTask] = []
-            try:
-                for task in tasks:
-                    new_task = sync_create_task(
-                        db_session=self.session, task_type_name=task.task_type.name, params=task.get_params()
-                    )
-                    task.status = "REQUEUED"
-                    new_task.status = "IN_PROGRESS"
-                    new_tasks.append(new_task)
 
-                self.session.add_all(new_tasks)
-                self.session.flush()
-                q = rq.Queue(task.task_type.queue_name, connection=self.redis)
-                jobs = q.enqueue_many(
-                    [
-                        rq.Queue.prepare_data(
-                            task.task_type.path,
-                            kwargs={"retry_task_id": task.retry_task_id},
-                        )
-                        for task in new_tasks
-                    ]
+    def clone_tasks(self, tasks: list[RetryTask]) -> list[RetryTask]:
+        tasks_by_type: defaultdict[str, list[RetryTask]] = defaultdict(list)
+        new_tasks: list[RetryTask] = []
+        for task in tasks:
+            tasks_by_type[task.task_type.name].append(task)
+        for task_type_name, tasks in tasks_by_type.items():
+            new_tasks.extend(
+                sync_create_many_tasks(
+                    db_session=self.session,
+                    task_type_name=task_type_name,
+                    params_list=[task.get_params() for task in tasks],
                 )
-            except Exception as ex:
-                self.session.rollback()
-                if not self.handle_view_exception(ex):
-                    raise
-                flash("Failed to requeue selected tasks.", category="error")
-            else:
-                self.session.commit()
-                flash(f"Requeued {len(jobs)} FAILED tasks")
-        else:
+            )
+        return new_tasks
+
+    @action("requeue", "Requeue", "Are you sure you want to requeue selected FAILED tasks?")
+    def action_requeue_tasks(self, ids: list[str]) -> None:
+        tasks = self.get_failed_tasks(ids)
+        if not tasks:
             flash("No relevant (FAILED) tasks to requeue.", category="error")
+            return
+
+        for task in tasks:
+            task.status = "REQUEUED"
+
+        try:
+            new_tasks = self.clone_tasks(tasks)
+            self.session.add_all(new_tasks)
+            self.session.flush()
+            enqueue_many_retry_tasks(
+                self.session, retry_tasks_ids=[task.retry_task_id for task in new_tasks], connection=self.redis
+            )
+        except Exception as ex:
+            self.session.rollback()
+            if not self.handle_view_exception(ex):
+                raise
+            flash("Failed to requeue selected tasks.", category="error")
+        else:
+            for task in new_tasks:
+                task.status = RetryTaskStatuses.IN_PROGRESS
+            self.session.commit()
+            flash("Requeued FAILED tasks")
 
 
 class TaskTypeAdminBase(ModelView):
