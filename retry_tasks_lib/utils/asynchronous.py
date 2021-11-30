@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, DefaultDict
+from typing import Any
 
 import rq
 import sentry_sdk
@@ -71,11 +71,11 @@ async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: li
     missing_ids = retry_tasks_ids_set - {retry_task.retry_task_id for retry_task in retry_tasks}
     if missing_ids == retry_tasks_ids_set:
         raise ValueError(
-            f"Error fetching all the RetryTasks requested for enqueuing. Requested RetryTaks ids: {retry_tasks_ids_set}"
+            f"Error fetching all the RetryTasks requested for enqueuing. Requested RetryTask ids: {retry_tasks_ids_set}"
         )
 
     if missing_ids:
-        logger.error(f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTaks ids: {missing_ids}")
+        logger.error(f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {missing_ids}")
 
     return retry_tasks
 
@@ -128,7 +128,7 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
             _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
         )
 
-        tasks_by_queue: DefaultDict[str, list[RetryTask]] = defaultdict(list)
+        tasks_by_queue: defaultdict[str, list[RetryTask]] = defaultdict(list)
         for task in retry_tasks:
             tasks_by_queue[task.task_type.queue_name].append(task)
 
