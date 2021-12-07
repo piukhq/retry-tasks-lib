@@ -24,6 +24,7 @@ def _handle_request_exception(
     max_retries: int,
     retry_task: RetryTask,
     request_exception: requests.RequestException,
+    extra_status_codes_to_retry: list[int],
 ) -> Tuple[dict, Optional[RetryTaskStatuses], Optional[datetime]]:
     status = None
     next_attempt_time = None
@@ -40,7 +41,8 @@ def _handle_request_exception(
     logger.warning(f"{subject} attempt {retry_task.attempts} failed for task: {retry_task.retry_task_id}")
 
     if retry_task.attempts < max_retries:
-        if request_exception.response is None or (500 <= request_exception.response.status_code < 600):
+        resp = request_exception.response
+        if resp is None or 500 <= resp.status_code < 600 or resp.status_code in extra_status_codes_to_retry:
             next_attempt_time = enqueue_retry_task_delay(
                 connection=connection,
                 retry_task=retry_task,
@@ -71,6 +73,7 @@ def handle_request_exception(
     max_retries: int,
     job: rq.job.Job,
     exc_value: Exception,
+    extra_status_codes_to_retry: Optional[list[int]] = None,
 ) -> None:
 
     response_audit = None
@@ -85,6 +88,7 @@ def handle_request_exception(
             max_retries,
             retry_task,
             exc_value,
+            extra_status_codes_to_retry or [],
         )
     else:  # otherwise report to sentry and fail the task
         status = RetryTaskStatuses.FAILED

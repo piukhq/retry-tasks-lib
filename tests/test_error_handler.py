@@ -105,6 +105,39 @@ def test_handle_error_http_5xx(
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
 
+def test_handle_error_http_extra_status_code_409(
+    errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
+) -> None:
+    mock_flag_modified = mocker.patch("retry_tasks_lib.db.models.flag_modified")
+    mock_enqueue = mocker.patch(
+        "retry_tasks_lib.utils.error_handler.enqueue_retry_task_delay", return_value=fixed_now + timedelta(seconds=180)
+    )
+    mock_get_task = mocker.patch("retry_tasks_lib.utils.error_handler.get_retry_task")
+    mock_get_task.return_value = errored_retry_task
+    mock_request = mock.MagicMock(spec=requests.Request, url="http://test.url")
+    handle_request_exception(
+        **handle_request_exception_params,
+        exc_value=requests.RequestException(
+            request=mock_request,
+            response=mock.MagicMock(spec=requests.Response, request=mock_request, status_code=409, text="Conflict"),
+        ),
+        extra_status_codes_to_retry=[404, 409, 418],
+    )
+
+    assert len(errored_retry_task.audit_data) == 1
+    assert errored_retry_task.audit_data[0]["response"]["body"] == "Conflict"
+    assert errored_retry_task.audit_data[0]["response"]["status"] == 409
+    mock_flag_modified.assert_called_once()
+    mock_enqueue.assert_called_once_with(
+        connection=handle_request_exception_params["connection"],
+        retry_task=errored_retry_task,
+        delay_seconds=180.0,
+    )
+    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.attempts == 1
+    assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
+
+
 def test_handle_error_http_timeout(
     errored_retry_task: RetryTask, fixed_now: datetime, handle_request_exception_params: dict, mocker: MockerFixture
 ) -> None:
