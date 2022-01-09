@@ -50,7 +50,7 @@ def test_retry_task_admin_requeue_action(
         .scalar_one()
     )
     assert new_task.get_params() == {"task-type-key-str": "a-string", "task-type-key-int": 42}
-    assert new_task.status.name == "IN_PROGRESS"
+    assert new_task.status == RetryTaskStatuses.PENDING
     mock_flash.assert_called_once_with("Requeued FAILED tasks")
 
 

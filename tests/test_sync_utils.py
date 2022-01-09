@@ -13,14 +13,154 @@ from sqlalchemy.orm.session import make_transient
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.synchronous import (
+    IncorrectRetryTaskStatusError,
+    RetryTaskAdditionalSubqueryData,
     _get_pending_retry_tasks,
     enqueue_many_retry_tasks,
     enqueue_retry_task,
     enqueue_retry_task_delay,
     get_retry_task,
+    retryable_task,
     sync_create_many_tasks,
     sync_create_task,
 )
+from tests.db import SyncSessionMaker
+
+
+def test_retry_task_decorator_no_task_for_provided_retry_task_id() -> None:
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        pytest.fail("Task function ran when it should not have")
+
+    with pytest.raises(ValueError):
+        task_func(9999)
+
+
+def test_retry_task_decorator_default_query_wrong_task_status(
+    retry_task_sync: RetryTask, sync_db_session: Session
+) -> None:
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        pytest.fail("Task function ran when it should not have")
+
+    # only PENDING or WAITING should be allowed to run
+    for status in (RetryTaskStatuses.FAILED, RetryTaskStatuses.CANCELLED, RetryTaskStatuses.SUCCESS):
+        retry_task_sync.status = status
+        sync_db_session.commit()
+
+        with pytest.raises(IncorrectRetryTaskStatusError):
+            task_func(retry_task_sync.retry_task_id)
+
+        sync_db_session.refresh(retry_task_sync)
+        assert retry_task_sync.status == status
+
+
+def test_retry_task_decorator_default_query(retry_task_sync: RetryTask, sync_db_session: Session) -> None:
+    assert retry_task_sync.status == RetryTaskStatuses.PENDING
+
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == retry_task_sync.retry_task_id
+
+    task_func(retry_task_sync.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync)
+    assert retry_task_sync.status == RetryTaskStatuses.IN_PROGRESS
+
+
+def test_retry_task_decorator_default_with_sub_query(
+    task_type_with_keys_sync: TaskType, sync_db_session: Session, redis: Redis
+) -> None:
+    task1, task2 = sync_create_many_tasks(
+        sync_db_session,
+        task_type_name=task_type_with_keys_sync.name,
+        params_list=[
+            {"task-type-key-str": "duplicated", "task-type-key-int": 42},
+            {"task-type-key-str": "duplicated", "task-type-key-int": 42},
+        ],
+    )
+
+    assert task1.retry_task_id != task2.retry_task_id
+
+    for status in (RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.FAILED):
+        task1.status = RetryTaskStatuses.PENDING
+        task2.status = status
+        sync_db_session.commit()
+
+        @retryable_task(
+            db_session_factory=SyncSessionMaker,
+            exclusive_constraints=[
+                RetryTaskAdditionalSubqueryData(
+                    matching_val_keys=["task-type-key-str", "task-type-key-int"],
+                    additional_statuses=[RetryTaskStatuses.FAILED],
+                )
+            ],
+            redis_connection=redis,
+        )
+        def task_func(retry_task: RetryTask, db_session: Session) -> None:
+            pytest.fail("Task function ran when it should not have")
+
+        task_func(task1.retry_task_id)
+
+        sync_db_session.refresh(task1)
+        sync_db_session.refresh(task2)
+        assert task1.status == RetryTaskStatuses.PENDING
+
+    q = rq.Queue(task1.task_type.queue_name, connection=redis)
+    assert len(q.scheduled_job_registry.get_job_ids()) == 2
+    job_ids = q.scheduled_job_registry.get_job_ids()
+    job1 = rq.job.Job.fetch(job_ids[0], connection=redis)
+    assert job1.kwargs == {"retry_task_id": task1.retry_task_id}
+    assert job1.func_name == task1.task_type.path
+    job2 = rq.job.Job.fetch(job_ids[1], connection=redis)
+    assert job2.kwargs == {"retry_task_id": task1.retry_task_id}
+    assert job2.func_name == task1.task_type.path
+
+
+def test_retry_task_decorator_default_with_sub_query_different_task_type(
+    task_type_with_keys_sync: TaskType, sync_db_session: Session, redis: Redis
+) -> None:
+    task1, task2 = sync_create_many_tasks(
+        sync_db_session,
+        task_type_name=task_type_with_keys_sync.name,
+        params_list=[
+            {"task-type-key-str": "duplicated", "task-type-key-int": 42},
+            {"task-type-key-str": "duplicated", "task-type-key-int": 42},
+        ],
+    )
+
+    # make a new task type using task_type_with_keys_sync as a template
+    sync_db_session.expunge(task_type_with_keys_sync)
+    make_transient(task_type_with_keys_sync)
+    task_type_with_keys_sync.task_type_id = None
+    task_type_with_keys_sync.name = "new-task-type"
+    sync_db_session.add(task_type_with_keys_sync)
+    sync_db_session.flush()
+
+    task2.task_type_id = task_type_with_keys_sync.task_type_id
+    sync_db_session.commit()
+
+    assert task1.task_type_id != task2.task_type_id
+
+    assert task1.status == task2.status == RetryTaskStatuses.PENDING
+
+    # Both tasks have the same params
+    assert task1.get_params() == task2.get_params()
+
+    @retryable_task(
+        db_session_factory=SyncSessionMaker,
+        exclusive_constraints=[
+            RetryTaskAdditionalSubqueryData(
+                matching_val_keys=["task-type-key-str", "task-type-key-int"],
+                additional_statuses=[RetryTaskStatuses.FAILED],
+            )
+        ],
+        redis_connection=redis,
+    )
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == task1.retry_task_id
+
+    task_func(task1.retry_task_id)
 
 
 @pytest.fixture(scope="function")
@@ -142,12 +282,12 @@ def test_sync_create_many_tasks_and_get_retry_task(
     sync_db_session.add_all(retry_tasks)
     sync_db_session.commit()
 
-    for retry_task, params in zip(retry_tasks, params_list):
+    for task, params in zip(retry_tasks, params_list):
         for status in (RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING):
-            retry_task.status = status
+            task.status = status
             sync_db_session.commit()
-            retry_task = get_retry_task(sync_db_session, retry_task.retry_task_id)
-            assert retry_task.get_params() == params
+            task = get_retry_task(sync_db_session, task.retry_task_id)
+            assert task.get_params() == params
 
 
 def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) -> None:

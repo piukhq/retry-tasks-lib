@@ -111,6 +111,8 @@ class RetryTaskAdminBase(ModelView):
 
         try:
             new_tasks = self.clone_tasks(tasks)
+            for task in new_tasks:
+                task.status = RetryTaskStatuses.PENDING
             self.session.add_all(new_tasks)
             self.session.flush()
             enqueue_many_retry_tasks(
@@ -122,8 +124,6 @@ class RetryTaskAdminBase(ModelView):
                 raise
             flash("Failed to requeue selected tasks.", category="error")
         else:
-            for task in new_tasks:
-                task.status = RetryTaskStatuses.IN_PROGRESS
             self.session.commit()
             flash("Requeued FAILED tasks")
 

@@ -38,7 +38,7 @@ async def test_enqueue_retry_task(
         connection=redis,
     )
     await async_db_session.refresh(retry_task_async)
-    assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
     assert job.func_name == retry_task_async.task_type.path
@@ -88,7 +88,7 @@ async def test_enqueue_many_retry_tasks(
     )
 
     await async_db_session.refresh(retry_task_async)
-    assert retry_task_async.status == RetryTaskStatuses.IN_PROGRESS
+    assert retry_task_async.status == RetryTaskStatuses.PENDING
     assert len(q.get_job_ids()) == 1
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
