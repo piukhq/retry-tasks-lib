@@ -80,21 +80,6 @@ async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: li
     return retry_tasks
 
 
-async def _update_status_and_flush(db_session: AsyncSession, retry_task: RetryTask) -> None:
-    retry_task.status = RetryTaskStatuses.IN_PROGRESS
-    await db_session.flush()
-
-
-async def _update_many_statuses_and_flush(db_session: AsyncSession, retry_tasks: list[RetryTask]) -> None:
-
-    # updating statuses with a loop instead of using db_session.execute(update(...)) to take advantage of
-    # the .with_for_update() option we used when fetching these object from the db.
-    for retry_task in retry_tasks:
-        retry_task.status = RetryTaskStatuses.IN_PROGRESS
-
-    await db_session.flush()
-
-
 async def _commit(db_session: AsyncSession) -> None:
     await db_session.commit()
 
@@ -109,7 +94,6 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
             _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
         )
         q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
-        await async_run_query(_update_status_and_flush, db_session, retry_task=retry_task)
         q.enqueue(
             retry_task.task_type.path,
             retry_task_id=retry_task.retry_task_id,
@@ -150,7 +134,6 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
             jobs = q.enqueue_many(prepared, pipeline=pipeline)
             queued_jobs.extend(jobs)
 
-        await async_run_query(_update_many_statuses_and_flush, db_session, retry_tasks=retry_tasks)
         pipeline.execute()
         logger.info(f"Queued {len(queued_jobs)} jobs.")
         await async_run_query(_commit, db_session, rollback_on_exc=False)
