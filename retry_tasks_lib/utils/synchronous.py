@@ -151,7 +151,7 @@ def retryable_task(
 
                 query = (
                     select(RetryTask)
-                    .options(selectinload(RetryTask.task_type_key_values), noload(RetryTask.task_type))
+                    .options(selectinload(RetryTask.task_type_key_values))
                     .where(
                         or_(
                             *[RetryTask.retry_task_id.in_(select(sq)) for sq in subqueries]
