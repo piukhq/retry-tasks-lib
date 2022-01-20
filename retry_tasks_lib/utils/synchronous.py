@@ -173,7 +173,11 @@ def retryable_task(
 
                 if not this_task:
                     raise ValueError("retry_task is unexpectedly None")
-                elif this_task.status not in (RetryTaskStatuses.PENDING, RetryTaskStatuses.WAITING):
+                elif this_task.status not in (
+                    RetryTaskStatuses.PENDING,
+                    RetryTaskStatuses.RETRYING,
+                    RetryTaskStatuses.WAITING,
+                ):
                     raise IncorrectRetryTaskStatusError(
                         f"task with retry_task_id {retry_task_id} is in incorrect state ({this_task.status})"
                     )

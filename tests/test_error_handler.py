@@ -100,7 +100,7 @@ def test_handle_error_http_5xx(
         retry_task=errored_retry_task,
         delay_seconds=180.0,
     )
-    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.status == RetryTaskStatuses.RETRYING
     assert errored_retry_task.attempts == 1
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
@@ -133,7 +133,7 @@ def test_handle_error_http_extra_status_code_409(
         retry_task=errored_retry_task,
         delay_seconds=180.0,
     )
-    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.status == RetryTaskStatuses.RETRYING
     assert errored_retry_task.attempts == 1
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
@@ -165,7 +165,7 @@ def test_handle_error_http_timeout(
         retry_task=errored_retry_task,
         delay_seconds=180.0,
     )
-    assert errored_retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    assert errored_retry_task.status == RetryTaskStatuses.RETRYING
     assert errored_retry_task.attempts == 1
     assert errored_retry_task.next_attempt_time == fixed_now + timedelta(seconds=180)
 
