@@ -43,8 +43,12 @@ def test_retry_task_decorator_default_query_wrong_task_status(
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         pytest.fail("Task function ran when it should not have")
 
-    # only PENDING or WAITING should be allowed to run
-    for status in (RetryTaskStatuses.FAILED, RetryTaskStatuses.CANCELLED, RetryTaskStatuses.SUCCESS):
+    # only PENDING, RETRYING or WAITING should be allowed to run
+    for status in [
+        s
+        for s in RetryTaskStatuses
+        if s not in (RetryTaskStatuses.PENDING, RetryTaskStatuses.RETRYING, RetryTaskStatuses.WAITING)
+    ]:
         retry_task_sync.status = status
         sync_db_session.commit()
 

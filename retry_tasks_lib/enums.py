@@ -12,6 +12,7 @@ def to_bool(v: str) -> bool:
 class RetryTaskStatuses(Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    RETRYING = "retrying"
     FAILED = "failed"
     SUCCESS = "success"
     WAITING = "waiting"

@@ -48,6 +48,7 @@ def _handle_request_exception(
                 retry_task=retry_task,
                 delay_seconds=pow(backoff_base, float(retry_task.attempts)) * 60,
             )
+            status = RetryTaskStatuses.RETRYING
             logger.info(f"Next attempt time at {next_attempt_time}")
         else:
             terminal = True
