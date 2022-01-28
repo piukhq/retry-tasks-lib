@@ -116,7 +116,10 @@ class RetryTaskAdminBase(ModelView):
             self.session.add_all(new_tasks)
             self.session.flush()
             enqueue_many_retry_tasks(
-                self.session, retry_tasks_ids=[task.retry_task_id for task in new_tasks], connection=self.redis
+                self.session,
+                retry_tasks_ids=[task.retry_task_id for task in new_tasks],
+                connection=self.redis,
+                at_front=True,  # Ensure that requeued tasks get run first
             )
         except Exception as ex:
             self.session.rollback()
