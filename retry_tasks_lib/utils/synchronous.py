@@ -325,7 +325,9 @@ def _get_pending_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) ->
     return retry_tasks
 
 
-def enqueue_many_retry_tasks(db_session: Session, *, retry_tasks_ids: list[int], connection: Any) -> None:
+def enqueue_many_retry_tasks(
+    db_session: Session, *, retry_tasks_ids: list[int], connection: Any, at_front: bool = False
+) -> None:
     retry_tasks: list[RetryTask] = sync_run_query(
         _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
     )
@@ -346,6 +348,7 @@ def enqueue_many_retry_tasks(db_session: Session, *, retry_tasks_ids: list[int],
                     kwargs={"retry_task_id": task.retry_task_id},
                     meta={"error_handler_path": task.task_type.error_handler_path},
                     failure_ttl=60 * 60 * 24 * 7,  # 1 week
+                    at_front=at_front,
                 )
             )
 
