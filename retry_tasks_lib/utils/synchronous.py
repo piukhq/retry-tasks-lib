@@ -270,7 +270,7 @@ def enqueue_retry_task_delay(
     failure_ttl: int = DEFAULT_FAILURE_TTL,
 ) -> datetime:
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
-    next_attempt_time = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(seconds=delay_seconds)
+    next_attempt_time = datetime.now(tz=timezone.utc) + timedelta(seconds=delay_seconds)
     job = q.enqueue_at(  # requires rq worker --with-scheduler
         next_attempt_time,
         retry_task.task_type.path,

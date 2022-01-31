@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Generator
 from unittest import mock
 
@@ -12,7 +12,7 @@ from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.error_handler import handle_request_exception, job_meta_handler
 
-now = datetime.utcnow()
+now = datetime.now(tz=timezone.utc)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -41,7 +41,7 @@ def handle_request_exception_params(mock_sync_db_session: mock.MagicMock, errore
 @pytest.fixture(scope="function")
 def fixed_now() -> Generator[datetime, None, None]:
     with mock.patch("retry_tasks_lib.utils.error_handler.datetime") as mock_datetime:
-        mock_datetime.utcnow.return_value = now
+        mock_datetime.now.return_value = now
         yield now
 
 

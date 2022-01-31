@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -14,7 +14,7 @@ def test_to_bool() -> None:
 
 
 def test_task_params_key_type() -> None:
-    now = datetime.utcnow()
+    now = datetime.now(tz=timezone.utc)
 
     for t, v, r in (
         ("STRING", "sample", "sample"),

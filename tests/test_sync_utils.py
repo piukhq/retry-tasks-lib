@@ -170,15 +170,15 @@ def test_retry_task_decorator_default_with_sub_query_different_task_type(
 
 @pytest.fixture(scope="function")
 def fixed_now() -> Generator[datetime, None, None]:
-    now = datetime.utcnow()
+    now = datetime.now(tz=timezone.utc)
     with mock.patch("retry_tasks_lib.utils.synchronous.datetime") as mock_datetime:
-        mock_datetime.utcnow.return_value = now
+        mock_datetime.now.return_value = now
         yield now
 
 
 def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetime, redis: Redis) -> None:
     backoff_seconds = 60.0
-    expected_next_attempt_time = fixed_now.replace(tzinfo=timezone.utc) + timedelta(seconds=backoff_seconds)
+    expected_next_attempt_time = fixed_now + timedelta(seconds=backoff_seconds)
 
     q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
     assert len(q.scheduled_job_registry.get_job_ids()) == 0
