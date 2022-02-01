@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
+from typing import Any
 
 
 def to_bool(v: str) -> bool:
@@ -24,6 +25,16 @@ class TaskParamsKeyTypes(Enum):
     STRING = str
     INTEGER = int
     FLOAT = float
-    BOOLEAN = to_bool
-    DATE = date.fromisoformat
-    DATETIME = datetime.fromisoformat
+    BOOLEAN = bool
+    DATE = date
+    DATETIME = datetime
+
+    def convert_value(self, v: str) -> Any:
+        if self.value == bool:
+            return v.lower() in ["true", "1", "t", "yes", "y"]
+
+        elif self.value in [date, datetime]:
+            return self.value.fromisoformat(v)
+
+        else:
+            return self.value(v)

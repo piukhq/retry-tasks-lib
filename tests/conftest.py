@@ -81,6 +81,10 @@ def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
     return [
         ("task-type-key-str", TaskParamsKeyTypes.STRING),
         ("task-type-key-int", TaskParamsKeyTypes.INTEGER),
+        ("task-type-key-float", TaskParamsKeyTypes.FLOAT),
+        ("task-type-key-bool", TaskParamsKeyTypes.BOOLEAN),
+        ("task-type-key-date", TaskParamsKeyTypes.DATE),
+        ("task-type-key-datetime", TaskParamsKeyTypes.DATETIME),
     ]
 
 

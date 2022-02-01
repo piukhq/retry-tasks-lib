@@ -12,6 +12,7 @@ from sqlalchemy.orm.session import make_transient
 
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
+from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
 from retry_tasks_lib.utils.synchronous import (
     IncorrectRetryTaskStatusError,
     RetryTaskAdditionalSubqueryData,
@@ -169,15 +170,15 @@ def test_retry_task_decorator_default_with_sub_query_different_task_type(
 
 @pytest.fixture(scope="function")
 def fixed_now() -> Generator[datetime, None, None]:
-    now = datetime.utcnow()
+    now = datetime.now(tz=timezone.utc)
     with mock.patch("retry_tasks_lib.utils.synchronous.datetime") as mock_datetime:
-        mock_datetime.utcnow.return_value = now
+        mock_datetime.now.return_value = now
         yield now
 
 
 def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetime, redis: Redis) -> None:
     backoff_seconds = 60.0
-    expected_next_attempt_time = fixed_now.replace(tzinfo=timezone.utc) + timedelta(seconds=backoff_seconds)
+    expected_next_attempt_time = fixed_now + timedelta(seconds=backoff_seconds)
 
     q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
     assert len(q.scheduled_job_registry.get_job_ids()) == 0
@@ -197,12 +198,26 @@ def test_enqueue_retry_task_delay(retry_task_sync: RetryTask, fixed_now: datetim
 def test_enqueue_retry_task(retry_task_sync: RetryTask, redis: Redis) -> None:
     q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
     assert len(q.jobs) == 0
-    enqueue_retry_task(connection=redis, retry_task=retry_task_sync)
+    enqueue_retry_task(connection=redis, retry_task=retry_task_sync, at_front=True)
     assert len(q.jobs) == 1
     job = q.jobs[0]
     assert job.kwargs == {"retry_task_id": 1}
     assert job.failure_ttl == 604800
     assert job.func_name == retry_task_sync.task_type.path
+
+
+@mock.patch("retry_tasks_lib.utils.synchronous.rq.Queue")
+def test_enqueue_retry_task_at_front(mock_Queue: mock.MagicMock, retry_task_sync: RetryTask, redis: Redis) -> None:
+    mock_queue = mock.MagicMock()
+    mock_Queue.return_value = mock_queue
+    enqueue_retry_task(connection=redis, retry_task=retry_task_sync, at_front=True)
+    mock_queue.enqueue.assert_called_with(
+        retry_task_sync.task_type.path,
+        retry_task_id=retry_task_sync.retry_task_id,
+        failure_ttl=DEFAULT_FAILURE_TTL,
+        at_front=True,
+        meta={"error_handler_path": retry_task_sync.task_type.error_handler_path},
+    )
 
 
 def test_enqueue_many_retry_tasks(sync_db_session: "Session", retry_task_sync: RetryTask, redis: Redis) -> None:
@@ -231,6 +246,37 @@ def test_enqueue_many_retry_tasks(sync_db_session: "Session", retry_task_sync: R
         assert job.kwargs == {"retry_task_id": i + 1}
         assert job.func_name == retry_task_sync.task_type.path
         assert job.meta == {"error_handler_path": "path.to.error_handler"}
+
+
+@mock.patch("retry_tasks_lib.utils.synchronous.rq.Queue")
+def test_enqueue_many_retry_tasks_at_front(
+    mock_Queue: mock.MagicMock,
+    sync_db_session: "Session",
+    retry_task_sync: RetryTask,
+) -> None:
+    mock_q = mock.MagicMock()
+    mock_Queue.return_value = mock_q
+    mock_connection, mock_pipeline = mock.MagicMock(), mock.MagicMock()
+    mock_connection.pipeline.return_value = mock_pipeline
+
+    mock_enqueue_data = mock.MagicMock()
+    mock_Queue.prepare_data.return_value = mock_enqueue_data
+
+    enqueue_many_retry_tasks(
+        sync_db_session,
+        retry_tasks_ids=[retry_task_sync.retry_task_id],
+        connection=mock_connection,
+        at_front=True,
+    )
+    mock_Queue.prepare_data.assert_called_once_with(
+        retry_task_sync.task_type.path,
+        kwargs={"retry_task_id": retry_task_sync.retry_task_id},
+        meta={"error_handler_path": retry_task_sync.task_type.error_handler_path},
+        failure_ttl=DEFAULT_FAILURE_TTL,
+        at_front=True,
+    )
+
+    mock_q.enqueue_many.assert_called_with([mock_enqueue_data], pipeline=mock_pipeline)
 
 
 def test__get_pending_retry_tasks(mocker: MockerFixture, sync_db_session: Session, retry_task_sync: RetryTask) -> None:

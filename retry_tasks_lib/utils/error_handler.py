@@ -1,6 +1,6 @@
 import importlib
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 import requests
@@ -30,7 +30,10 @@ def _handle_request_exception(
     next_attempt_time = None
     subject = retry_task.task_type.name
     terminal = False
-    response_audit: dict[str, Any] = {"error": str(request_exception), "timestamp": datetime.utcnow().isoformat()}
+    response_audit: dict[str, Any] = {
+        "error": str(request_exception),
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+    }
 
     if request_exception.response is not None:
         response_audit["response"] = {
