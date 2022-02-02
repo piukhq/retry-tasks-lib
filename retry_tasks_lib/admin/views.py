@@ -63,7 +63,7 @@ class RetryTaskAdminBase(ModelView):
                         value.task_type_key.name,
                         value.value,
                     )
-                    for value in model.task_type_key_values
+                    for value in sorted(model.task_type_key_values, key=lambda value: value.task_type_key.name)
                 ]
             )
         ),
