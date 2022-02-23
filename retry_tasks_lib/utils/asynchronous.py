@@ -1,3 +1,5 @@
+import asyncio
+
 from collections import defaultdict
 from typing import Any
 
@@ -93,13 +95,17 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
         retry_task = await async_run_query(
             _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
         )
-        q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
-        q.enqueue(
-            retry_task.task_type.path,
-            retry_task_id=retry_task.retry_task_id,
-            failure_ttl=60 * 60 * 24 * 7,  # 1 week
-            meta={"error_handler_path": retry_task.task_type.error_handler_path},
-        )
+
+        def blocking_io() -> None:
+            q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
+            q.enqueue(
+                retry_task.task_type.path,
+                retry_task_id=retry_task.retry_task_id,
+                failure_ttl=60 * 60 * 24 * 7,  # 1 week
+                meta={"error_handler_path": retry_task.task_type.error_handler_path},
+            )
+
+        await asyncio.to_thread(blocking_io)
         await async_run_query(_commit, db_session, rollback_on_exc=False)
     except Exception as ex:
         sentry_sdk.capture_exception(ex)
@@ -116,26 +122,29 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
         for task in retry_tasks:
             tasks_by_queue[task.task_type.queue_name].append(task)
 
-        pipeline = connection.pipeline()
-        queued_jobs: list[rq.job.Job] = []
-        for queue_name, tasks in tasks_by_queue.items():
-            q = rq.Queue(queue_name, connection=connection)
-            prepared: list[EnqueueData] = []
-            for task in tasks:
-                prepared.append(
-                    rq.Queue.prepare_data(
-                        task.task_type.path,
-                        kwargs={"retry_task_id": task.retry_task_id},
-                        meta={"error_handler_path": task.task_type.error_handler_path},
-                        failure_ttl=60 * 60 * 24 * 7,  # 1 week
+        def blocking_io() -> None:
+            pipeline = connection.pipeline()
+            queued_jobs: list[rq.job.Job] = []
+            for queue_name, tasks in tasks_by_queue.items():
+                q = rq.Queue(queue_name, connection=connection)
+                prepared: list[EnqueueData] = []
+                for task in tasks:
+                    prepared.append(
+                        rq.Queue.prepare_data(
+                            task.task_type.path,
+                            kwargs={"retry_task_id": task.retry_task_id},
+                            meta={"error_handler_path": task.task_type.error_handler_path},
+                            failure_ttl=60 * 60 * 24 * 7,  # 1 week
+                        )
                     )
-                )
 
-            jobs = q.enqueue_many(prepared, pipeline=pipeline)
-            queued_jobs.extend(jobs)
+                jobs = q.enqueue_many(prepared, pipeline=pipeline)
+                queued_jobs.extend(jobs)
 
-        pipeline.execute()
-        logger.info(f"Queued {len(queued_jobs)} jobs.")
+            pipeline.execute()
+            logger.info(f"Queued {len(queued_jobs)} jobs.")
+
+        await asyncio.to_thread(blocking_io)
         await async_run_query(_commit, db_session, rollback_on_exc=False)
 
     except Exception as ex:
