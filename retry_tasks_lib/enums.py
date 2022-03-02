@@ -4,10 +4,7 @@ from typing import Any
 
 
 def to_bool(v: str) -> bool:
-    if v.lower() in ["true", "1", "t", "yes", "y"]:
-        return True
-    else:
-        return False
+    return v.lower() in ["true", "1", "t", "yes", "y"]
 
 
 class RetryTaskStatuses(Enum):
@@ -33,8 +30,7 @@ class TaskParamsKeyTypes(Enum):
         if self.value == bool:
             return v.lower() in ["true", "1", "t", "yes", "y"]
 
-        elif self.value in [date, datetime]:
+        if self.value in [date, datetime]:
             return self.value.fromisoformat(v)
 
-        else:
-            return self.value(v)
+        return self.value(v)

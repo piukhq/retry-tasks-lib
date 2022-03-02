@@ -32,15 +32,15 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: "3.9"
-      - run: pip install poetry
+      - run: pip install poetry==1.2.0a2
       - run: poetry config virtualenvs.create false
       - run: poetry install
       - run: xenon --no-assert --max-average A --max-modules B --max-absolute B .
       - run: mypy retry_tasks_lib
-      - run: pytest tests --verbose --cov=retry_tasks_lib --cov-report=xml --junitxml=report.xml
-      - run: flake8 .
+      - run: pylint retry_tasks_lib tests
       - run: black --line-length=120 --check .
       - run: isort --check --line-length 120 --profile black .
+      - run: pytest tests --verbose --cov=retry_tasks_lib --cov-report=xml --junitxml=report.xml
   create_tag_release:
     if: github.event_name == 'release' && github.event.action == 'published'
     name: create_tag_release

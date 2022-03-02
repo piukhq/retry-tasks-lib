@@ -4,7 +4,7 @@ version = "1.11.0"
 description = "helpers functions and models for setting up tasks with rq"
 authors = ["Bink <bink@bink.bink>"]
 readme = "README.md"
-repository = "https://git.bink.com/libs/retry-tasks-lib"
+repository = "https://github.com/binkhq/retry-tasks-lib"
 keywords = ["rq", "sqlalchemy", "flask_admin"]
 classifiers = [
     'Development Status :: 5 - Production/Stable',
@@ -25,10 +25,10 @@ requests = "^2.26.0"
 sentry-sdk = "^1.4.3"
 Flask-Admin = "^1.5.8"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
+pylint-pytest = "^1.1.2"
 black = "^21.9b0"
 isort = "^5.9.3"
-flake8 = "^3.9.2"
 mypy = "^0.910"
 xenon = "^0.8.0"
 types-requests = "^2.25.9"
@@ -44,7 +44,7 @@ psycopg2-binary = "^2.9.1"
 types-redis = "^3.5.15"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.8"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
@@ -60,3 +60,30 @@ ensure_newline_before_comments = true
 line_length = 120
 skip_gitignore = false
 lines_between_types = 1
+
+[tool.mypy]
+disallow_untyped_defs = true
+show_error_codes = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+plugins = [
+    "sqlalchemy.ext.mypy.plugin",
+]
+
+[tool.pylint.MASTER]
+load-plugins=[
+    "pylint_pytest"
+]
+
+[tool.pylint.messages_control]
+max-line-length = 120
+disable = [
+    "logging-fstring-interpolation",
+    "missing-module-docstring",
+    "missing-function-docstring",
+    "missing-class-docstring",
+    "too-few-public-methods",
+    "duplicate-code", # a lot of logic will be similar between sync and async methods but this is expected
+]
+good-names=["k", "v", "i", "q", "fn", "ex"]
+exclude=["tests"]

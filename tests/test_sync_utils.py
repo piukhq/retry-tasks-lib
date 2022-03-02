@@ -1,3 +1,5 @@
+# pylint: disable=unused-argument, no-value-for-parameter
+
 from datetime import datetime, timedelta, timezone
 from typing import Generator
 from unittest import mock
@@ -34,7 +36,7 @@ def test_retry_task_decorator_no_task_for_provided_retry_task_id() -> None:
         pytest.fail("Task function ran when it should not have")
 
     with pytest.raises(ValueError):
-        task_func(9999)
+        task_func(9999)  # pylint: disable=no-value-for-parameter
 
 
 def test_retry_task_decorator_default_query_wrong_task_status(
@@ -207,9 +209,11 @@ def test_enqueue_retry_task(retry_task_sync: RetryTask, redis: Redis) -> None:
 
 
 @mock.patch("retry_tasks_lib.utils.synchronous.rq.Queue")
-def test_enqueue_retry_task_at_front(mock_Queue: mock.MagicMock, retry_task_sync: RetryTask, redis: Redis) -> None:
+def test_enqueue_retry_task_at_front(
+    mock_queue_class: mock.MagicMock, retry_task_sync: RetryTask, redis: Redis
+) -> None:
     mock_queue = mock.MagicMock()
-    mock_Queue.return_value = mock_queue
+    mock_queue_class.return_value = mock_queue
     enqueue_retry_task(connection=redis, retry_task=retry_task_sync, at_front=True)
     mock_queue.enqueue.assert_called_with(
         retry_task_sync.task_type.path,
@@ -250,17 +254,17 @@ def test_enqueue_many_retry_tasks(sync_db_session: "Session", retry_task_sync: R
 
 @mock.patch("retry_tasks_lib.utils.synchronous.rq.Queue")
 def test_enqueue_many_retry_tasks_at_front(
-    mock_Queue: mock.MagicMock,
+    mock_queue_class: mock.MagicMock,
     sync_db_session: "Session",
     retry_task_sync: RetryTask,
 ) -> None:
     mock_q = mock.MagicMock()
-    mock_Queue.return_value = mock_q
+    mock_queue_class.return_value = mock_q
     mock_connection, mock_pipeline = mock.MagicMock(), mock.MagicMock()
     mock_connection.pipeline.return_value = mock_pipeline
 
     mock_enqueue_data = mock.MagicMock()
-    mock_Queue.prepare_data.return_value = mock_enqueue_data
+    mock_queue_class.prepare_data.return_value = mock_enqueue_data
 
     enqueue_many_retry_tasks(
         sync_db_session,
@@ -268,7 +272,7 @@ def test_enqueue_many_retry_tasks_at_front(
         connection=mock_connection,
         at_front=True,
     )
-    mock_Queue.prepare_data.assert_called_once_with(
+    mock_queue_class.prepare_data.assert_called_once_with(
         retry_task_sync.task_type.path,
         kwargs={"retry_task_id": retry_task_sync.retry_task_id},
         meta={"error_handler_path": retry_task_sync.task_type.error_handler_path},

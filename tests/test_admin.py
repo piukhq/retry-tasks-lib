@@ -1,3 +1,5 @@
+# pylint: disable=too-many-arguments
+
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -18,9 +20,9 @@ if TYPE_CHECKING:
 
 @pytest.fixture()
 def admin(sync_db_session: "Session", redis: "Redis") -> RetryTaskAdminBase:
-    admin = RetryTaskAdminBase(RetryTask, sync_db_session, name="whatever", endpoint="whatever")
-    admin.redis = redis
-    return admin
+    adm = RetryTaskAdminBase(RetryTask, sync_db_session, name="whatever", endpoint="whatever")
+    adm.redis = redis
+    return adm
 
 
 @mock.patch("retry_tasks_lib.admin.views.flash")
@@ -116,3 +118,4 @@ def test_retry_task_admin_requeue_action_at_front(
     mock_enqueue_many_retry_tasks.assert_called_once_with(
         sync_db_session, connection=redis, retry_tasks_ids=[new_task.retry_task_id], at_front=True
     )
+    mock_flash.assert_called()

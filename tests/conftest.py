@@ -15,15 +15,15 @@ from tests.db import POSTGRES_DB, REDIS_URL, AsyncSessionMaker, SyncSessionMaker
 
 @pytest.fixture(scope="function")
 def redis() -> Generator:
-    redis = Redis.from_url(
+    rds = Redis.from_url(
         REDIS_URL,
         socket_connect_timeout=3,
         socket_keepalive=True,
         retry_on_timeout=False,
     )
-    redis.flushdb()
-    yield redis
-    redis.flushdb()
+    rds.flushdb()
+    yield rds
+    rds.flushdb()
 
 
 @pytest.fixture(scope="function")
@@ -92,17 +92,18 @@ def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
 def task_type_with_keys_sync(
     sync_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
-    tt = TaskType(
+    task_type = TaskType(
         name="task-type", path="path.to.func", queue_name="queue-name", error_handler_path="path.to.error_handler"
     )
-    sync_db_session.add(tt)
+    sync_db_session.add(task_type)
     sync_db_session.flush()
-    ttks: list[TaskTypeKey] = [
-        TaskTypeKey(name=key_name, type=key_type, task_type_id=tt.task_type_id) for key_name, key_type in task_type_keys
+    task_type_keys: list[TaskTypeKey] = [
+        TaskTypeKey(name=key_name, type=key_type, task_type_id=task_type.task_type_id)
+        for key_name, key_type in task_type_keys
     ]
-    sync_db_session.add_all(ttks)
+    sync_db_session.add_all(task_type_keys)
     sync_db_session.commit()
-    return tt
+    return task_type
 
 
 @pytest.fixture(scope="function")
@@ -123,18 +124,19 @@ def retry_task_sync(sync_db_session: "Session", task_type_with_keys_sync: TaskTy
 async def task_type_with_keys_async(
     async_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
-    tt = TaskType(
+    task_type = TaskType(
         name="task-type", path="path.to.func", queue_name="queue-name", error_handler_path="path.to.error_handler"
     )
-    async_db_session.add(tt)
+    async_db_session.add(task_type)
     await async_db_session.flush()
-    ttks: list[TaskTypeKey] = [
-        TaskTypeKey(name=key_name, type=key_type, task_type_id=tt.task_type_id) for key_name, key_type in task_type_keys
+    task_type_keys: list[TaskTypeKey] = [
+        TaskTypeKey(name=key_name, type=key_type, task_type_id=task_type.task_type_id)
+        for key_name, key_type in task_type_keys
     ]
 
-    async_db_session.add_all(ttks)
+    async_db_session.add_all(task_type_keys)
     await async_db_session.commit()
-    return tt
+    return task_type
 
 
 @pytest.fixture(scope="function")
