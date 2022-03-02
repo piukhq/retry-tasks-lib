@@ -96,7 +96,7 @@ def retryable_task(
     def get_subqueries(task_to_run: RetryTask, subquery_datas: list[RetryTaskAdditionalSubqueryData]) -> subquery:
         subqueries = []
         for subquery_data in subquery_datas:
-            statuses = set(subq_data.additional_statuses or [])
+            statuses = set(subquery_data.additional_statuses or [])
             statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
             key_expressions = [
                 or_(
@@ -131,7 +131,7 @@ def retryable_task(
             subqueries.append(subq)
         return subqueries
 
-    def decorater(task_func: Callable) -> Callable:
+    def decorator(task_func: Callable) -> Callable:
         @wraps(task_func)
         def wrapper(retry_task_id: int) -> None:
             with db_session_factory() as db_session:
@@ -165,15 +165,16 @@ def retryable_task(
 
                 this_task = None
                 other_non_pending = []
-                for rt in retry_tasks:
-                    if rt.retry_task_id == retry_task_id:
-                        this_task = rt  # this object is the FOR UPDATE locked one
-                    elif rt.status != RetryTaskStatuses.PENDING:
-                        other_non_pending.append(rt)
+                for task in retry_tasks:
+                    if task.retry_task_id == retry_task_id:
+                        this_task = task  # this object is the FOR UPDATE locked one
+                    elif task.status != RetryTaskStatuses.PENDING:
+                        other_non_pending.append(task)
 
                 if not this_task:
                     raise ValueError("retry_task is unexpectedly None")
-                elif this_task.status not in (
+
+                if this_task.status not in (
                     RetryTaskStatuses.PENDING,
                     RetryTaskStatuses.RETRYING,
                     RetryTaskStatuses.WAITING,
@@ -181,7 +182,8 @@ def retryable_task(
                     raise IncorrectRetryTaskStatusError(
                         f"task with retry_task_id {retry_task_id} is in incorrect state ({this_task.status})"
                     )
-                elif other_non_pending:
+
+                if other_non_pending:
                     logger.info(
                         f"Non-PENDING tasks returned for query "
                         f"{','.join([str(rt.retry_task_id) for rt in other_non_pending])}: "
@@ -193,11 +195,11 @@ def retryable_task(
                     this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
                 else:
                     this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
-                    return task_func(this_task, db_session)
+                    task_func(this_task, db_session)
 
         return wrapper
 
-    return decorater
+    return decorator
 
 
 def _get_task_type(db_session: Session, *, task_type_name: str) -> TaskType:

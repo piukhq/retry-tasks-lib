@@ -55,7 +55,7 @@ class RetryTaskAdminBase(ModelView):
         % Markup(
             "".join(
                 [
-                    '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(
+                    '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(  # pylint: disable=consider-using-f-string
                         url_for(
                             f"{view.endpoint_prefix}/task-type-key-values.details_view",
                             id=f"{value.retry_task_id},{value.task_type_key_id}",
@@ -89,12 +89,13 @@ class RetryTaskAdminBase(ModelView):
         new_tasks: list[RetryTask] = []
         for task in tasks:
             tasks_by_type[task.task_type.name].append(task)
-        for task_type_name, tasks in tasks_by_type.items():
+
+        for task_type_name, tasks_to_copy in tasks_by_type.items():
             new_tasks.extend(
                 sync_create_many_tasks(
                     db_session=self.session,
                     task_type_name=task_type_name,
-                    params_list=[task.get_params() for task in tasks],
+                    params_list=[task.get_params() for task in tasks_to_copy],
                 )
             )
         return new_tasks
@@ -121,7 +122,7 @@ class RetryTaskAdminBase(ModelView):
                 connection=self.redis,
                 at_front=True,  # Ensure that requeued tasks get run first
             )
-        except Exception as ex:
+        except Exception as ex:  # pylint: disable=broad-except
             self.session.rollback()
             if not self.handle_view_exception(ex):
                 raise

@@ -50,8 +50,8 @@ async def test_enqueue_retry_task_failed_enqueue(
     mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
 ) -> None:
     mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
+    mock_queue_class = mocker.patch("rq.Queue")
+    mock_queue = mock_queue_class.return_value
     mock_queue.enqueue.side_effect = Exception("test enqueue exception")
 
     # Provide a different session here as the exception rolls back the fixture
@@ -64,7 +64,7 @@ async def test_enqueue_retry_task_failed_enqueue(
         )
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert MockQueue.call_args[0] == (retry_task_async.task_type.queue_name,)
+    assert mock_queue_class.call_args[0] == (retry_task_async.task_type.queue_name,)
     mock_queue.enqueue.assert_called_once_with(
         retry_task_async.task_type.path,
         retry_task_id=retry_task_async.retry_task_id,
@@ -101,8 +101,8 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
     mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
 ) -> None:
     mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
-    MockQueue = mocker.patch("rq.Queue")
-    mock_queue = MockQueue.return_value
+    mock_queue_class = mocker.patch("rq.Queue")
+    mock_queue = mock_queue_class.return_value
     mock_queue.enqueue_many.side_effect = Exception("test enqueue exception")
     mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
     mock_query.return_value = [retry_task_async]
@@ -117,9 +117,9 @@ async def test_enqueue_many_retry_tasks_failed_enqueue(
         )
     await async_db_session.refresh(retry_task_async)
     assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert MockQueue.call_args[0] == (retry_task_async.task_type.queue_name,)
+    assert mock_queue_class.call_args[0] == (retry_task_async.task_type.queue_name,)
     mock_queue.enqueue_many.assert_called_once()
-    MockQueue.prepare_data.assert_called_once_with(
+    mock_queue_class.prepare_data.assert_called_once_with(
         retry_task_async.task_type.path,
         kwargs={"retry_task_id": retry_task_async.retry_task_id},
         failure_ttl=604800,

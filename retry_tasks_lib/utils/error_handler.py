@@ -19,6 +19,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 def _handle_request_exception(
+    *,
     connection: Any,
     backoff_base: int,
     max_retries: int,
@@ -87,12 +88,12 @@ def handle_request_exception(
 
     if isinstance(exc_value, requests.RequestException):  # handle http failures specifically
         response_audit, status, next_attempt_time = _handle_request_exception(
-            connection,
-            backoff_base,
-            max_retries,
-            retry_task,
-            exc_value,
-            extra_status_codes_to_retry or [],
+            connection=connection,
+            backoff_base=backoff_base,
+            max_retries=max_retries,
+            retry_task=retry_task,
+            request_exception=exc_value,
+            extra_status_codes_to_retry=extra_status_codes_to_retry or [],
         )
     else:  # otherwise report to sentry and fail the task
         status = RetryTaskStatuses.FAILED
