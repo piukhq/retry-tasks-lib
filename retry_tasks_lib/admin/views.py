@@ -71,14 +71,16 @@ class RetryTaskAdminBase(ModelView):
         % json.dumps(model.audit_data, indent=4, sort_keys=True),
     }
 
-    def get_failed_tasks(self, ids: list[str]) -> list[RetryTask]:
+    def get_failed_and_cancelled_tasks(self, ids: list[str]) -> list[RetryTask]:
         return (
             self.session.execute(
                 select(RetryTask)
                 .options(selectinload(RetryTask.task_type_key_values))
                 .with_for_update()
-                .where(RetryTask.retry_task_id.in_(ids))
-                .where(RetryTask.status == "FAILED")
+                .where(
+                    RetryTask.retry_task_id.in_(ids),
+                    RetryTask.status.in_(RetryTaskStatuses.requeueable_statuses_names()),
+                )
             )
             .scalars()
             .all()
@@ -100,11 +102,11 @@ class RetryTaskAdminBase(ModelView):
             )
         return new_tasks
 
-    @action("requeue", "Requeue", "Are you sure you want to requeue selected FAILED tasks?")
+    @action("requeue", "Requeue", "Are you sure you want to requeue selected FAILED and/or CANCELLED tasks?")
     def action_requeue_tasks(self, ids: list[str]) -> None:
-        tasks = self.get_failed_tasks(ids)
+        tasks = self.get_failed_and_cancelled_tasks(ids)
         if not tasks:
-            flash("No relevant (FAILED) tasks to requeue.", category="error")
+            flash(f"No relevant {RetryTaskStatuses.requeueable_statuses_names()} tasks to requeue.", category="error")
             return
 
         for task in tasks:
@@ -129,7 +131,48 @@ class RetryTaskAdminBase(ModelView):
             flash("Failed to requeue selected tasks.", category="error")
         else:
             self.session.commit()
-            flash("Requeued FAILED tasks")
+            flash(f"Requeued selected {RetryTaskStatuses.requeueable_statuses_names()} tasks")
+
+    @action(
+        "cancel",
+        "Cancel",
+        "Are you sure you want to cancel the selected tasks? This can break data consistency within our system.",
+    )
+    def action_cancel_tasks(self, ids: list[str]) -> None:
+        required_statuses = RetryTaskStatuses.cancellable_statuses_names()
+        tasks = (
+            self.session.execute(
+                select(RetryTask)
+                .options(selectinload(RetryTask.task_type_key_values))
+                .with_for_update()
+                .where(
+                    RetryTask.retry_task_id.in_(ids),
+                    RetryTask.status.in_(required_statuses),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not tasks:
+            flash(
+                f"No elegible task to cancel. Tasks must be in one of the following states: {required_statuses}",
+                category="error",
+            )
+            return
+        try:
+            for task in tasks:
+                task.status = "CANCELLED"
+
+            self.session.commit()
+
+        except Exception as ex:  # pylint: disable=broad-except
+            self.session.rollback()
+            if not self.handle_view_exception(ex):
+                raise
+            flash("Failed to cancel selected tasks.", category="error")
+        else:
+            self.session.commit()
+            flash("Cancelled selected elegible tasks")
 
 
 class TaskTypeAdminBase(ModelView):

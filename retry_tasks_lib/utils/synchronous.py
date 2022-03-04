@@ -44,6 +44,94 @@ class RetryTaskAdditionalSubqueryData:
     additional_statuses: Optional[list[RetryTaskStatuses]] = None
 
 
+def _get_subqueries(task_to_run: RetryTask, subquery_datas: list[RetryTaskAdditionalSubqueryData]) -> subquery:
+    subqueries = []
+    for subquery_data in subquery_datas:
+        statuses = set(subquery_data.additional_statuses or [])
+        statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
+        key_expressions = [
+            or_(
+                *[
+                    *[
+                        and_(
+                            TaskTypeKey.name == k,
+                            TaskTypeKeyValue.value == func.cast(v, String),
+                        )
+                        for (k, v) in task_to_run.get_params().items()
+                        if k in subquery_data.matching_val_keys
+                    ],
+                ],
+            )
+        ]
+        subq = (
+            select(TaskTypeKeyValue.retry_task_id)
+            .join(TaskTypeKeyValue.task_type_key)
+            .join(TaskTypeKey.task_type)
+            .join(RetryTask, RetryTask.retry_task_id == TaskTypeKeyValue.retry_task_id)
+            .where(
+                and_(
+                    RetryTask.status.in_(statuses),
+                    RetryTask.task_type_id == task_to_run.task_type_id,
+                    *key_expressions,
+                ),
+            )
+            .group_by(TaskTypeKeyValue.retry_task_id)
+            .having(func.count(distinct(TaskTypeKeyValue.value)) == len(subquery_data.matching_val_keys))
+            .subquery()
+        )
+        subqueries.append(subq)
+
+    return subqueries
+
+
+def _route_task_execution(
+    db_session: "Session",
+    *,
+    task_func: Callable,
+    retry_task_id: int,
+    retry_tasks: list[RetryTask],
+    redis_connection: Optional[Any],
+    delay_seconds: int,
+) -> None:
+    this_task = None
+    other_non_pending = []
+    for task in retry_tasks:
+        if task.retry_task_id == retry_task_id:
+            this_task = task  # this object is the FOR UPDATE locked one
+        elif task.status != RetryTaskStatuses.PENDING:
+            other_non_pending.append(task)
+
+    if not this_task:
+        raise ValueError("retry_task is unexpectedly None")
+
+    if this_task.status == RetryTaskStatuses.CANCELLED:
+        logger.info(f"Task with retry_task_id {retry_task_id} has been cancelled. Removing from queue.")
+        return
+
+    if this_task.status not in (
+        RetryTaskStatuses.PENDING,
+        RetryTaskStatuses.RETRYING,
+        RetryTaskStatuses.WAITING,
+    ):
+        raise IncorrectRetryTaskStatusError(
+            f"task with retry_task_id {retry_task_id} is in incorrect state ({this_task.status})"
+        )
+
+    if other_non_pending:
+        logger.info(
+            f"Non-PENDING tasks returned for query "
+            f"{','.join([str(rt.retry_task_id) for rt in other_non_pending])}: "
+            f"Requeueing task with retry_task_id {retry_task_id}"
+        )
+        next_attempt_time = enqueue_retry_task_delay(
+            connection=redis_connection, retry_task=this_task, delay_seconds=delay_seconds
+        )
+        this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
+    else:
+        this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
+        task_func(this_task, db_session)
+
+
 def retryable_task(
     *,
     db_session_factory: sessionmaker,
@@ -93,44 +181,6 @@ def retryable_task(
             if len(subq_data.matching_val_keys) != len(set(subq_data.matching_val_keys)):
                 raise ValueError(f"matching_val_keys has duplicates: {subq_data.matching_val_keys}")
 
-    def get_subqueries(task_to_run: RetryTask, subquery_datas: list[RetryTaskAdditionalSubqueryData]) -> subquery:
-        subqueries = []
-        for subquery_data in subquery_datas:
-            statuses = set(subquery_data.additional_statuses or [])
-            statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
-            key_expressions = [
-                or_(
-                    *[
-                        *[
-                            and_(
-                                TaskTypeKey.name == k,
-                                TaskTypeKeyValue.value == func.cast(v, String),
-                            )
-                            for (k, v) in task_to_run.get_params().items()
-                            if k in subquery_data.matching_val_keys
-                        ],
-                    ],
-                )
-            ]
-            subq = (
-                select(TaskTypeKeyValue.retry_task_id)
-                .join(TaskTypeKeyValue.task_type_key)
-                .join(TaskTypeKey.task_type)
-                .join(RetryTask, RetryTask.retry_task_id == TaskTypeKeyValue.retry_task_id)
-                .where(
-                    and_(
-                        RetryTask.status.in_(statuses),
-                        RetryTask.task_type_id == task_to_run.task_type_id,
-                        *key_expressions,
-                    ),
-                )
-                .group_by(TaskTypeKeyValue.retry_task_id)
-                .having(func.count(distinct(TaskTypeKeyValue.value)) == len(subquery_data.matching_val_keys))
-                .subquery()
-            )
-            subqueries.append(subq)
-        return subqueries
-
     def decorator(task_func: Callable) -> Callable:
         @wraps(task_func)
         def wrapper(retry_task_id: int) -> None:
@@ -147,7 +197,7 @@ def retryable_task(
                         .unique()
                         .scalar_one()
                     )
-                    subqueries = get_subqueries(task_to_run, exclusive_constraints)
+                    subqueries = _get_subqueries(task_to_run, exclusive_constraints)
 
                 query = (
                     select(RetryTask)
@@ -162,40 +212,14 @@ def retryable_task(
                 )
 
                 retry_tasks = db_session.execute(query).unique().scalars().all()
-
-                this_task = None
-                other_non_pending = []
-                for task in retry_tasks:
-                    if task.retry_task_id == retry_task_id:
-                        this_task = task  # this object is the FOR UPDATE locked one
-                    elif task.status != RetryTaskStatuses.PENDING:
-                        other_non_pending.append(task)
-
-                if not this_task:
-                    raise ValueError("retry_task is unexpectedly None")
-
-                if this_task.status not in (
-                    RetryTaskStatuses.PENDING,
-                    RetryTaskStatuses.RETRYING,
-                    RetryTaskStatuses.WAITING,
-                ):
-                    raise IncorrectRetryTaskStatusError(
-                        f"task with retry_task_id {retry_task_id} is in incorrect state ({this_task.status})"
-                    )
-
-                if other_non_pending:
-                    logger.info(
-                        f"Non-PENDING tasks returned for query "
-                        f"{','.join([str(rt.retry_task_id) for rt in other_non_pending])}: "
-                        f"Requeueing task with retry_task_id {retry_task_id}"
-                    )
-                    next_attempt_time = enqueue_retry_task_delay(
-                        connection=redis_connection, retry_task=this_task, delay_seconds=delay_seconds
-                    )
-                    this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
-                else:
-                    this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
-                    task_func(this_task, db_session)
+                _route_task_execution(
+                    db_session=db_session,
+                    task_func=task_func,
+                    retry_task_id=retry_task_id,
+                    retry_tasks=retry_tasks,
+                    redis_connection=redis_connection,
+                    delay_seconds=delay_seconds,
+                )
 
         return wrapper
 
@@ -338,6 +362,11 @@ def enqueue_many_retry_tasks(
     failure_ttl: int = DEFAULT_FAILURE_TTL,
     at_front: bool = False,
 ) -> None:
+
+    if not retry_tasks_ids:
+        logger.warning("'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead.")
+        return
+
     retry_tasks: list[RetryTask] = sync_run_query(
         _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
     )

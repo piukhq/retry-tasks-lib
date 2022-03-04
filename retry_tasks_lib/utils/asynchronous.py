@@ -113,6 +113,12 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
 
 
 async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: Any) -> None:
+    if not retry_tasks_ids:
+        logger.warning(
+            "async 'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead."
+        )
+        return
+
     try:
         retry_tasks: list[RetryTask] = await async_run_query(
             _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids

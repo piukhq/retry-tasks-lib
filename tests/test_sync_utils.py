@@ -46,11 +46,17 @@ def test_retry_task_decorator_default_query_wrong_task_status(
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         pytest.fail("Task function ran when it should not have")
 
-    # only PENDING, RETRYING or WAITING should be allowed to run
+    # only PENDING, RETRYING or WAITING should be allowed to run CANCELLED will quietely remove the task from the queue.
     for status in [
         s
         for s in RetryTaskStatuses
-        if s not in (RetryTaskStatuses.PENDING, RetryTaskStatuses.RETRYING, RetryTaskStatuses.WAITING)
+        if s
+        not in (
+            RetryTaskStatuses.PENDING,
+            RetryTaskStatuses.RETRYING,
+            RetryTaskStatuses.WAITING,
+            RetryTaskStatuses.CANCELLED,
+        )
     ]:
         retry_task_sync.status = status
         sync_db_session.commit()
@@ -60,6 +66,26 @@ def test_retry_task_decorator_default_query_wrong_task_status(
 
         sync_db_session.refresh(retry_task_sync)
         assert retry_task_sync.status == status
+
+
+@mock.patch("retry_tasks_lib.utils.synchronous.logger")
+def test_retry_task_decorator_default_query_cancelled_task(
+    mock_logger: mock.Mock, retry_task_sync: RetryTask, sync_db_session: Session
+) -> None:
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        pytest.fail("Task function ran when it should not have")
+
+    retry_task_sync.status = RetryTaskStatuses.CANCELLED
+    sync_db_session.commit()
+
+    task_func(retry_task_sync.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync)
+    assert retry_task_sync.status == RetryTaskStatuses.CANCELLED
+    mock_logger.info.assert_called_once_with(
+        f"Task with retry_task_id {retry_task_sync.retry_task_id} has been cancelled. Removing from queue."
+    )
 
 
 def test_retry_task_decorator_default_query(retry_task_sync: RetryTask, sync_db_session: Session) -> None:

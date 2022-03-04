@@ -17,6 +17,16 @@ class RetryTaskStatuses(Enum):
     CANCELLED = "cancelled"
     REQUEUED = "requeued"
 
+    @classmethod
+    def cancellable_statuses_names(cls) -> list[str]:
+        return [
+            task_status.name for task_status in cls if task_status not in [cls.SUCCESS, cls.CANCELLED, cls.REQUEUED]
+        ]
+
+    @classmethod
+    def requeueable_statuses_names(cls) -> list[str]:
+        return [cls.FAILED.name, cls.CANCELLED.name]
+
 
 class TaskParamsKeyTypes(Enum):
     STRING = str
