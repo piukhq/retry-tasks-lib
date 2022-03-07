@@ -97,6 +97,26 @@ async def test_enqueue_many_retry_tasks(
 
 
 @pytest.mark.asyncio
+@mock.patch("retry_tasks_lib.utils.asynchronous.logger")
+async def test_enqueue_many_retry_tasks_empty_list(
+    mock_logger: mock.Mock, async_db_session: "AsyncSession", retry_task_async: RetryTask, redis: Redis
+) -> None:
+    q = rq.Queue(retry_task_async.task_type.queue_name, connection=redis)
+    assert len(q.jobs) == 0
+
+    await enqueue_many_retry_tasks(
+        async_db_session,
+        retry_tasks_ids=[],
+        connection=redis,
+    )
+    assert len(q.jobs) == 0
+
+    mock_logger.warning.assert_called_once_with(
+        "async 'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead."
+    )
+
+
+@pytest.mark.asyncio
 async def test_enqueue_many_retry_tasks_failed_enqueue(
     mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
 ) -> None:

@@ -72,7 +72,8 @@ plugins = [
 
 [tool.pylint.MASTER]
 load-plugins=[
-    "pylint_pytest"
+    "pylint_pytest",
+    "pylint.extensions.mccabe"
 ]
 
 [tool.pylint.messages_control]

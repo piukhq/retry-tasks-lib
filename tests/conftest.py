@@ -79,6 +79,7 @@ async def async_db_session() -> AsyncGenerator["AsyncSession", None]:
 @pytest.fixture(scope="session")
 def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
     return [
+        ("lookup-val", TaskParamsKeyTypes.STRING),
         ("task-type-key-str", TaskParamsKeyTypes.STRING),
         ("task-type-key-int", TaskParamsKeyTypes.INTEGER),
         ("task-type-key-float", TaskParamsKeyTypes.FLOAT),
