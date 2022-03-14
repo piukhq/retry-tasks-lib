@@ -21,6 +21,7 @@ class RetryTaskAdminBase(ModelView):
     redis: Optional[Redis] = None  # Set this in subclass
 
     form_create_rules = ("task_type",)
+    form_edit_rules = ("attempts",)
     column_exclude_list = ("audit_data",)
     column_filters = (
         "status",
