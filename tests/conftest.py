@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Generator, Tuple
+from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -77,7 +77,7 @@ async def async_db_session() -> AsyncGenerator["AsyncSession", None]:
 
 
 @pytest.fixture(scope="session")
-def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
+def task_type_keys() -> list[tuple[str, TaskParamsKeyTypes]]:
     return [
         ("lookup-val", TaskParamsKeyTypes.STRING),
         ("task-type-key-str", TaskParamsKeyTypes.STRING),
@@ -91,18 +91,18 @@ def task_type_keys() -> list[Tuple[str, TaskParamsKeyTypes]]:
 
 @pytest.fixture(scope="function")
 def task_type_with_keys_sync(
-    sync_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
+    sync_db_session: "Session", task_type_keys: list[tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
     task_type = TaskType(
         name="task-type", path="path.to.func", queue_name="queue-name", error_handler_path="path.to.error_handler"
     )
     sync_db_session.add(task_type)
     sync_db_session.flush()
-    task_type_keys: list[TaskTypeKey] = [
+    task_type_keys_objs: list[TaskTypeKey] = [
         TaskTypeKey(name=key_name, type=key_type, task_type_id=task_type.task_type_id)
         for key_name, key_type in task_type_keys
     ]
-    sync_db_session.add_all(task_type_keys)
+    sync_db_session.add_all(task_type_keys_objs)
     sync_db_session.commit()
     return task_type
 
@@ -123,19 +123,19 @@ def retry_task_sync(sync_db_session: "Session", task_type_with_keys_sync: TaskTy
 
 @pytest.fixture(scope="function")
 async def task_type_with_keys_async(
-    async_db_session: "Session", task_type_keys: list[Tuple[str, TaskParamsKeyTypes]]
+    async_db_session: "Session", task_type_keys: list[tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
     task_type = TaskType(
         name="task-type", path="path.to.func", queue_name="queue-name", error_handler_path="path.to.error_handler"
     )
     async_db_session.add(task_type)
     await async_db_session.flush()
-    task_type_keys: list[TaskTypeKey] = [
+    task_type_keys_objs: list[TaskTypeKey] = [
         TaskTypeKey(name=key_name, type=key_type, task_type_id=task_type.task_type_id)
         for key_name, key_type in task_type_keys
     ]
 
-    async_db_session.add_all(task_type_keys)
+    async_db_session.add_all(task_type_keys_objs)
     await async_db_session.commit()
     return task_type
 

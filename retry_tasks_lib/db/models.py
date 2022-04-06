@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Tuple
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -44,7 +44,7 @@ class RetryTask(TmpBase, TimestampMixin):
     task_type = relationship("TaskType", back_populates="retry_tasks")
     task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy="joined")
 
-    def get_task_type_key_values(self, values: list[Tuple[int, str]]) -> list["TaskTypeKeyValue"]:
+    def get_task_type_key_values(self, values: list[tuple[int, str]]) -> list["TaskTypeKeyValue"]:
         return [
             TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=value)
             for key_id, value in values

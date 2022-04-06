@@ -2,7 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import rq
 
@@ -41,7 +41,7 @@ class RetryTaskAdditionalSubqueryData:
     """
 
     matching_val_keys: list[str]
-    additional_statuses: Optional[list[RetryTaskStatuses]] = None
+    additional_statuses: list[RetryTaskStatuses] | None = None
 
 
 def _get_subqueries(task_to_run: RetryTask, subquery_datas: list[RetryTaskAdditionalSubqueryData]) -> subquery:
@@ -90,7 +90,7 @@ def _route_task_execution(
     task_func: Callable,
     retry_task_id: int,
     retry_tasks: list[RetryTask],
-    redis_connection: Optional[Any],
+    redis_connection: Any,
     delay_seconds: int,
 ) -> None:
     this_task = None
@@ -135,8 +135,8 @@ def _route_task_execution(
 def retryable_task(
     *,
     db_session_factory: sessionmaker,
-    exclusive_constraints: Optional[list[RetryTaskAdditionalSubqueryData]] = None,
-    redis_connection: Optional[Any] = None,
+    exclusive_constraints: list[RetryTaskAdditionalSubqueryData] | None = None,
+    redis_connection: Any = None,
     delay_seconds: int = 60,
 ) -> Callable:
     """
