@@ -34,7 +34,7 @@ jobs:
           python-version: "3.10"
       - run: pip install poetry==1.2.0a2
       - run: poetry config virtualenvs.create false
-      - run: poetry install
+      - run: poetry install -E admin
       - run: xenon --no-assert --max-average A --max-modules B --max-absolute B .
       - run: black --check .
       - run: isort --check .
@@ -55,7 +55,7 @@ jobs:
           fi
       - uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
       - run: pip install poetry==1.2.0a2 poetry-dynamic-versioning
       - run: poetry config repositories.pypicloud https://pypi.uksouth.bink.sh/simple
       - run: poetry config http-basic.pypicloud c02bed7a-4224-4fb4-82ad-17499e4d0e4a ${{ secrets.PYPICLOUD_PASSWORD }}

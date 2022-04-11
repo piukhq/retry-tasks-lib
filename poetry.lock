@@ -951,7 +951,7 @@ admin = ["Flask-Admin"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "a098d8f0fa868847d86f6ae10d5e2d19fca392a762314db38654ade0324b3227"
+content-hash = "34f91878ad0573e9604561e3b705ab68bc142194117823179bcd702765d8a4c5"
 
 [metadata.files]
 appnope = [
