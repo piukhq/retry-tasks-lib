@@ -1,7 +1,6 @@
 import json
 
 from collections import defaultdict
-from typing import Optional
 
 from flask import Markup, flash, url_for
 from flask_admin.actions import action
@@ -18,7 +17,7 @@ from retry_tasks_lib.utils.synchronous import enqueue_many_retry_tasks, sync_cre
 class RetryTaskAdminBase(ModelView):
 
     endpoint_prefix = ""  # Set this in subclass for url/routing
-    redis: Optional[Redis] = None  # Set this in subclass
+    redis: Redis | None = None  # Set this in subclass
 
     form_create_rules = ("task_type",)
     form_edit_rules = ("attempts",)

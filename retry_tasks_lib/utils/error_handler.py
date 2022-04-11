@@ -1,7 +1,7 @@
 import importlib
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import requests
 import rq
@@ -26,7 +26,7 @@ def _handle_request_exception(
     retry_task: RetryTask,
     request_exception: requests.RequestException,
     extra_status_codes_to_retry: list[int],
-) -> Tuple[dict, Optional[RetryTaskStatuses], Optional[datetime]]:
+) -> tuple[dict, RetryTaskStatuses | None, datetime | None]:
     status = None
     next_attempt_time = None
     subject = retry_task.task_type.name
@@ -78,7 +78,7 @@ def handle_request_exception(
     max_retries: int,
     job: rq.job.Job,
     exc_value: Exception,
-    extra_status_codes_to_retry: Optional[list[int]] = None,
+    extra_status_codes_to_retry: list[int] | None = None,
 ) -> None:
 
     response_audit = None
