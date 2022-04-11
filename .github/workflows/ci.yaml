@@ -34,7 +34,7 @@ jobs:
           python-version: "3.10"
       - run: pip install poetry==1.2.0a2
       - run: poetry config virtualenvs.create false
-      - run: poetry install
+      - run: poetry install -E admin
       - run: xenon --no-assert --max-average A --max-modules B --max-absolute B .
       - run: black --check .
       - run: isort --check .

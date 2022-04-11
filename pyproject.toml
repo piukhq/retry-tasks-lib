@@ -22,7 +22,7 @@ python = "^3.10"
 rq = "^1.10.0"
 SQLAlchemy = "^1.4.25"
 requests = "^2.26.0"
-sentry-sdk = "^1.4.3"
+sentry-sdk = "^1.5.8"
 Flask-Admin = { version = "^1.5.8", optional = true }
 
 [tool.poetry.extras]
