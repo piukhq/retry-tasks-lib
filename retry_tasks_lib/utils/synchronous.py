@@ -19,7 +19,7 @@ from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKey, TaskTypeKeyValue
 from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
+from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL, USE_NULL_POOL
 
 
 class IncorrectRetryTaskStatusError(Exception):
@@ -120,6 +120,7 @@ def _route_task_execution(
 
     with sentry_span.start_child(op="can-run-task-now-logic") as span:
         this_task = None
+        can_run = False
         other_non_pending = []
         for task in retry_tasks:
             if task.retry_task_id == retry_task_id:
@@ -155,8 +156,11 @@ def _route_task_execution(
             this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
         else:
             this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
-            with span.start_child(op="decorated-retry-task"):
-                task_func(this_task, db_session)
+            can_run = True
+
+    if can_run:
+        with span.start_child(op="decorated-retry-task"):
+            task_func(this_task, db_session)
 
 
 def retryable_task(
@@ -202,7 +206,6 @@ def retryable_task(
         the number of seconds in the future to requeue a task that has been
         blocked from running.
     """
-
     parent_span = Hub.current.scope.span
     trace: Callable
     if parent_span is None:
@@ -210,20 +213,24 @@ def retryable_task(
     else:
         trace = parent_span.start_child
 
-    with trace(op="rq-tasks-decorator") as span:
+    with trace(op="check-exclusive-constraints"):
         if exclusive_constraints:
             # it is important that we check this due to the .having clause below on the subquery
             for subq_data in exclusive_constraints:
                 if len(subq_data.matching_val_keys) != len(set(subq_data.matching_val_keys)):
                     raise ValueError(f"matching_val_keys has duplicates: {subq_data.matching_val_keys}")
 
-        def decorator(task_func: Callable) -> Callable:
-            @wraps(task_func)
-            def wrapper(retry_task_id: int) -> None:
+    def decorator(task_func: Callable) -> Callable:
+        @wraps(task_func)
+        def wrapper(retry_task_id: int) -> None:
+
+            with trace(op="rq-tasks-decorator") as span:
+
                 # this is to prevent session pool sharing between parent and forked process:
                 # https://docs.sqlalchemy.org/en/14/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
+                if not USE_NULL_POOL:
+                    db_session_factory.kw["bind"].dispose(close=False)
 
-                db_session_factory.kw["bind"].dispose(close=False)
                 with db_session_factory() as db_session:
 
                     if exclusive_constraints:
@@ -265,9 +272,9 @@ def retryable_task(
                         sentry_span=span,
                     )
 
-            return wrapper
+        return wrapper
 
-        return decorator
+    return decorator
 
 
 def _get_task_type(db_session: Session, *, task_type_name: str) -> TaskType:

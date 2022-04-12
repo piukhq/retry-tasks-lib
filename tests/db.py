@@ -1,17 +1,17 @@
+from os import getenv
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from retry_tasks_lib.settings import get_env, to_bool
-
 load_dotenv()
 
-POSTGRES_DB = get_env("POSTGRES_DB", "retry_tasks_lib_test")
-SQLALCHEMY_DATABASE_URI = get_env("SQLALCHEMY_DATABASE_URI", "")
-SQL_DEBUG = get_env("SQL_DEBUG", "false", conv=to_bool)
-REDIS_URL = get_env("REDIS_URL")
+POSTGRES_DB = getenv("POSTGRES_DB", "retry_tasks_lib_test")
+SQLALCHEMY_DATABASE_URI = getenv("SQLALCHEMY_DATABASE_URI", "")
+SQL_DEBUG = getenv("SQL_DEBUG", "false").lower() == "true"
+REDIS_URL = getenv("REDIS_URL", "")
 
 async_engine = create_async_engine(
     SQLALCHEMY_DATABASE_URI, pool_pre_ping=True, future=True, echo=SQL_DEBUG, poolclass=NullPool

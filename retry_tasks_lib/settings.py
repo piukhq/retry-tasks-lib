@@ -1,22 +1,14 @@
-from os import getenv
-from typing import Any, Callable
-
-
-def get_env(k: str, default: str = None, *, conv: Callable = str) -> Any:  # pragma: no cover
-    v = getenv(k, default)
-    if v is not None:
-        return conv(v)
-
-    return None
-
-
-def to_bool(v: str) -> bool:  # pragma: no cover
-    value = v.lower()
-    if value not in ["true", "false"]:
-        raise ValueError("invalid value for a boolean.")
-
-    return value == "true"
-
-
-DB_CONNECTION_RETRY_TIMES = get_env("DB_CONNECTION_RETRY_TIMES", "3", conv=int)
+DB_CONNECTION_RETRY_TIMES = 3
 DEFAULT_FAILURE_TTL = 60 * 60 * 24 * 7  # 1 week
+USE_NULL_POOL = False
+
+
+# pylint: disable=global-statement
+def load_settings(settings: object) -> None:
+    global USE_NULL_POOL
+    global DEFAULT_FAILURE_TTL
+    global DB_CONNECTION_RETRY_TIMES
+
+    USE_NULL_POOL = getattr(settings, "USE_NULL_POOL", USE_NULL_POOL)
+    DEFAULT_FAILURE_TTL = getattr(settings, "DEFAULT_FAILURE_TTL", DEFAULT_FAILURE_TTL)
+    DB_CONNECTION_RETRY_TIMES = getattr(settings, "DB_CONNECTION_RETRY_TIMES", DB_CONNECTION_RETRY_TIMES)
