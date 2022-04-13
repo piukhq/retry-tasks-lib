@@ -12,7 +12,6 @@ from sentry_sdk.tracing import Span
 from sqlalchemy import and_, distinct, func, or_
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session, joinedload, noload, selectinload, sessionmaker
-from sqlalchemy.sql.selectable import subquery
 from sqlalchemy.sql.sqltypes import String
 
 from retry_tasks_lib import logger
@@ -46,14 +45,13 @@ class RetryTaskAdditionalSubqueryData:
     additional_statuses: list[RetryTaskStatuses] | None = None
 
 
-def _get_subqueries(
+def _get_additional_task_ids(
     db_session: "Session",
     retry_task_id: int,
     subquery_datas: list[RetryTaskAdditionalSubqueryData],
     sentry_span: Span,
-) -> subquery:
+) -> list[int]:
     with sentry_span.start_child(op="build-subqueries-filters"):
-        subqueries = []
 
         # Note that this object is not FOR UPDATE locked as it is merely used for its related data
         def _fetch_task_to_run(db_session: Session) -> RetryTask:
@@ -69,6 +67,7 @@ def _get_subqueries(
 
         task_to_run: RetryTask = sync_run_query(_fetch_task_to_run, db_session)
 
+        task_ids: list[int] = []
         for subquery_data in subquery_datas:
             statuses = set(subquery_data.additional_statuses or [])
             statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
@@ -86,25 +85,27 @@ def _get_subqueries(
                     ],
                 )
             ]
-            subq = (
-                select(TaskTypeKeyValue.retry_task_id)
-                .join(TaskTypeKeyValue.task_type_key)
-                .join(TaskTypeKey.task_type)
-                .join(RetryTask, RetryTask.retry_task_id == TaskTypeKeyValue.retry_task_id)
-                .where(
-                    and_(
-                        RetryTask.status.in_(statuses),
-                        RetryTask.task_type_id == task_to_run.task_type_id,
-                        *key_expressions,
-                    ),
+            task_ids.extend(
+                db_session.execute(
+                    select(TaskTypeKeyValue.retry_task_id)
+                    .join(TaskTypeKeyValue.task_type_key)
+                    .join(TaskTypeKey.task_type)
+                    .join(RetryTask, RetryTask.retry_task_id == TaskTypeKeyValue.retry_task_id)
+                    .where(
+                        and_(
+                            RetryTask.status.in_(statuses),
+                            RetryTask.task_type_id == task_to_run.task_type_id,
+                            *key_expressions,
+                        ),
+                    )
+                    .group_by(TaskTypeKeyValue.retry_task_id)
+                    .having(func.count(distinct(TaskTypeKeyValue.value)) == len(subquery_data.matching_val_keys))
                 )
-                .group_by(TaskTypeKeyValue.retry_task_id)
-                .having(func.count(distinct(TaskTypeKeyValue.value)) == len(subquery_data.matching_val_keys))
-                .subquery()
+                .scalars()
+                .all()
             )
-            subqueries.append(subq)
 
-    return subqueries
+    return task_ids
 
 
 def _route_task_execution(
@@ -233,12 +234,14 @@ def retryable_task(
 
                 with db_session_factory() as db_session:
 
+                    eligible_task_ids: set = {retry_task_id}
                     if exclusive_constraints:
                         suffix = "with-subqueries"
-                        subqueries = _get_subqueries(db_session, retry_task_id, exclusive_constraints, span)
+                        eligible_task_ids.update(
+                            _get_additional_task_ids(db_session, retry_task_id, exclusive_constraints, span)
+                        )
                     else:
                         suffix = "without-subqueries"
-                        subqueries = []
 
                     with span.start_child(op=f"fetch-task-data-{suffix}"):
 
@@ -247,15 +250,9 @@ def retryable_task(
                                 db_session.execute(
                                     select(RetryTask)
                                     .options(selectinload(RetryTask.task_type_key_values))
-                                    .where(
-                                        or_(
-                                            *[RetryTask.retry_task_id.in_(select(sq)) for sq in subqueries]
-                                            + [RetryTask.retry_task_id == retry_task_id],  # + the task to run
-                                        )
-                                    )
+                                    .where(RetryTask.retry_task_id.in_(eligible_task_ids))
                                     .with_for_update()
                                 )
-                                .unique()
                                 .scalars()
                                 .all()
                             )
