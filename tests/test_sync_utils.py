@@ -17,7 +17,7 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
 from retry_tasks_lib.utils.synchronous import (
     IncorrectRetryTaskStatusError,
-    RetryTaskAdditionalSubqueryData,
+    RetryTaskAdditionalQueryData,
     _get_pending_retry_tasks,
     enqueue_many_retry_tasks,
     enqueue_retry_task,
@@ -104,26 +104,26 @@ def test_retry_task_decorator_default_query(retry_task_sync: RetryTask, sync_db_
 def test_retry_task_decorator_default_with_sub_query(
     task_type_with_keys_sync: TaskType, sync_db_session: Session, redis: Redis
 ) -> None:
-    task1, task2 = sync_create_many_tasks(
+    task1, task2, task3 = sync_create_many_tasks(
         sync_db_session,
         task_type_name=task_type_with_keys_sync.name,
         params_list=[
             {"task-type-key-str": "duplicated", "task-type-key-int": 42},
             {"task-type-key-str": "duplicated", "task-type-key-int": 42},
+            {"task-type-key-str": "different", "task-type-key-int": 42},
         ],
     )
-
-    assert task1.retry_task_id != task2.retry_task_id
 
     for status in (RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.FAILED):
         task1.status = RetryTaskStatuses.PENDING
         task2.status = status
+        task3.status = RetryTaskStatuses.PENDING
         sync_db_session.commit()
 
         @retryable_task(
             db_session_factory=SyncSessionMaker,
             exclusive_constraints=[
-                RetryTaskAdditionalSubqueryData(
+                RetryTaskAdditionalQueryData(
                     matching_val_keys=["task-type-key-str", "task-type-key-int"],
                     additional_statuses=[RetryTaskStatuses.FAILED],
                 )
@@ -183,7 +183,7 @@ def test_retry_task_decorator_default_with_sub_query_different_task_type(
     @retryable_task(
         db_session_factory=SyncSessionMaker,
         exclusive_constraints=[
-            RetryTaskAdditionalSubqueryData(
+            RetryTaskAdditionalQueryData(
                 matching_val_keys=["task-type-key-str", "task-type-key-int"],
                 additional_statuses=[RetryTaskStatuses.FAILED],
             )

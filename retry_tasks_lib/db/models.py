@@ -37,7 +37,7 @@ class RetryTask(TmpBase, TimestampMixin):
     attempts = Column(Integer, default=0, nullable=False)
     audit_data = Column(MutableList.as_mutable(JSONB), nullable=False, default=text("'[]'::jsonb"))
     next_attempt_time = Column(DateTime, nullable=True)
-    status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING)
+    status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING, index=True)
 
     task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
