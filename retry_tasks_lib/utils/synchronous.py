@@ -2,7 +2,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from typing import Any, Callable
+from random import randint
+from typing import Any, Callable, TypedDict
 
 import rq
 
@@ -20,15 +21,23 @@ from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL, USE_NULL_POOL
 
+DelayRangeType = TypedDict(
+    "DelayRangeType",
+    {
+        "min": int,
+        "max": int,
+    },
+)
+
 
 class IncorrectRetryTaskStatusError(Exception):
     pass
 
 
 @dataclass
-class RetryTaskAdditionalSubqueryData:
+class RetryTaskAdditionalQueryData:
     """
-    Class for encapsulating the data to be used in additional subqueries to
+    Class for encapsulating the data to be used in additional queries to
     identify additional tasks to be found when considering whether the task to
     be run can run in isolation in the context of this task type.
 
@@ -48,10 +57,10 @@ class RetryTaskAdditionalSubqueryData:
 def _get_additional_task_ids(
     db_session: "Session",
     retry_task_id: int,
-    subquery_datas: list[RetryTaskAdditionalSubqueryData],
+    additional_query_datas: list[RetryTaskAdditionalQueryData],
     sentry_span: Span,
 ) -> list[int]:
-    with sentry_span.start_child(op="build-subqueries-filters"):
+    with sentry_span.start_child(op="build-additional-filters"):
 
         # Note that this object is not FOR UPDATE locked as it is merely used for its related data
         def _fetch_task_to_run(db_session: Session) -> RetryTask:
@@ -68,41 +77,54 @@ def _get_additional_task_ids(
         task_to_run: RetryTask = sync_run_query(_fetch_task_to_run, db_session)
 
         task_ids: list[int] = []
-        for subquery_data in subquery_datas:
-            statuses = set(subquery_data.additional_statuses or [])
+        for query_data in additional_query_datas:
+            statuses = set(query_data.additional_statuses or [])
             statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
-            key_expressions = [
-                or_(
-                    *[
+
+            def _fetch_task_ids(
+                db_session: "Session", query_data: RetryTaskAdditionalQueryData, statuses: RetryTaskStatuses
+            ) -> list[int]:
+                key_expressions = [
+                    or_(
                         *[
-                            and_(
-                                TaskTypeKey.name == k,
-                                TaskTypeKeyValue.value == func.cast(v, String),
-                            )
-                            for (k, v) in task_to_run.get_params().items()
-                            if k in subquery_data.matching_val_keys
+                            *[
+                                and_(
+                                    TaskTypeKey.name == k,
+                                    TaskTypeKeyValue.value == func.cast(v, String),
+                                )
+                                for (k, v) in task_to_run.get_params().items()
+                                if k in query_data.matching_val_keys
+                            ],
                         ],
-                    ],
-                )
-            ]
-            task_ids.extend(
-                db_session.execute(
-                    select(TaskTypeKeyValue.retry_task_id)
-                    .join(TaskTypeKeyValue.task_type_key)
-                    .join(TaskTypeKey.task_type)
-                    .join(RetryTask, RetryTask.retry_task_id == TaskTypeKeyValue.retry_task_id)
-                    .where(
-                        and_(
-                            RetryTask.status.in_(statuses),
-                            RetryTask.task_type_id == task_to_run.task_type_id,
-                            *key_expressions,
-                        ),
                     )
-                    .group_by(TaskTypeKeyValue.retry_task_id)
-                    .having(func.count(distinct(TaskTypeKeyValue.value)) == len(subquery_data.matching_val_keys))
+                ]
+                return (
+                    db_session.execute(
+                        select(TaskTypeKeyValue.retry_task_id)
+                        .where(
+                            TaskTypeKeyValue.retry_task_id == RetryTask.retry_task_id,
+                            TaskTypeKeyValue.task_type_key_id == TaskTypeKey.task_type_key_id,
+                            and_(
+                                RetryTask.status.in_(statuses),
+                                RetryTask.task_type_id == task_to_run.task_type_id,
+                                *key_expressions,
+                            ),
+                        )
+                        .group_by(TaskTypeKeyValue.retry_task_id)
+                        .having(func.count(distinct(TaskTypeKeyValue.value)) == len(query_data.matching_val_keys))
+                    )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
+
+            task_ids.extend(
+                sync_run_query(
+                    _fetch_task_ids,
+                    db_session,
+                    query_data=query_data,
+                    statuses=statuses,
+                    rollback_on_exc=False,
+                )
             )
 
     return task_ids
@@ -111,15 +133,14 @@ def _get_additional_task_ids(
 def _route_task_execution(
     db_session: "Session",
     *,
-    task_func: Callable,
     retry_task_id: int,
     retry_tasks: list[RetryTask],
     redis_connection: Any,
-    delay_seconds: int,
+    requeue_delay_range: DelayRangeType,
     sentry_span: Span,
-) -> None:
+) -> tuple[bool, RetryTask]:
 
-    with sentry_span.start_child(op="can-run-task-now-logic") as span:
+    with sentry_span.start_child(op="can-run-task-now-logic"):
         this_task = None
         can_run = False
         other_non_pending = []
@@ -134,7 +155,7 @@ def _route_task_execution(
 
         if this_task.status == RetryTaskStatuses.CANCELLED:
             logger.info(f"Task with retry_task_id {retry_task_id} has been cancelled. Removing from queue.")
-            return
+            return False, this_task
 
         if this_task.status not in (
             RetryTaskStatuses.PENDING,
@@ -152,24 +173,24 @@ def _route_task_execution(
                 f"Requeueing task with retry_task_id {retry_task_id}"
             )
             next_attempt_time = enqueue_retry_task_delay(
-                connection=redis_connection, retry_task=this_task, delay_seconds=delay_seconds
+                connection=redis_connection,
+                retry_task=this_task,
+                delay_seconds=randint(requeue_delay_range["min"], requeue_delay_range["max"]),
             )
             this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
         else:
             this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
             can_run = True
 
-    if can_run:
-        with span.start_child(op="decorated-retry-task"):
-            task_func(this_task, db_session)
+    return can_run, this_task
 
 
 def retryable_task(
     *,
     db_session_factory: sessionmaker,
-    exclusive_constraints: list[RetryTaskAdditionalSubqueryData] | None = None,
+    exclusive_constraints: list[RetryTaskAdditionalQueryData] | None = None,
     redis_connection: Any = None,
-    delay_seconds: int = 60,
+    requeue_delay_range: DelayRangeType | None = None,
 ) -> Callable:
     """
     Decorator for retry task functions which will move the task to be run into
@@ -203,10 +224,11 @@ def retryable_task(
         an optional Redis connection instance used to re-enqueue the task in the
         future. Provide this when also providing `exclusive_constraints`
 
-        `delay_seconds`:
-        the number of seconds in the future to requeue a task that has been
-        blocked from running.
+        `requeue_delay_range`:
+        a tuple of two integers defining an interval between which a task that has been
+        blocked from running should be requeued (jitter).
     """
+    requeue_delay_range = requeue_delay_range or {"min": 5, "max": 20}
     parent_span = Hub.current.scope.span
     trace: Callable
     if parent_span is None:
@@ -236,17 +258,17 @@ def retryable_task(
 
                     eligible_task_ids: set = {retry_task_id}
                     if exclusive_constraints:
-                        suffix = "with-subqueries"
+                        suffix = "with-exclusive-constraints"
                         eligible_task_ids.update(
                             _get_additional_task_ids(db_session, retry_task_id, exclusive_constraints, span)
                         )
                     else:
-                        suffix = "without-subqueries"
+                        suffix = "without-exclusive-constraints"
 
                     with span.start_child(op=f"fetch-task-data-{suffix}"):
 
-                        def _query(db_session: Session) -> list[RetryTask]:
-                            return (
+                        retry_tasks: list[RetryTask] = sync_run_query(
+                            lambda db_session: (
                                 db_session.execute(
                                     select(RetryTask)
                                     .options(selectinload(RetryTask.task_type_key_values))
@@ -255,19 +277,22 @@ def retryable_task(
                                 )
                                 .scalars()
                                 .all()
-                            )
+                            ),
+                            db_session,
+                        )
 
-                        retry_tasks: list[RetryTask] = sync_run_query(_query, db_session)
-
-                    _route_task_execution(
+                    can_run, task_to_run = _route_task_execution(
                         db_session=db_session,
-                        task_func=task_func,
                         retry_task_id=retry_task_id,
                         retry_tasks=retry_tasks,
                         redis_connection=redis_connection,
-                        delay_seconds=delay_seconds,
+                        requeue_delay_range=requeue_delay_range,  # type: ignore [arg-type]
                         sentry_span=span,
                     )
+
+                if can_run:
+                    with trace(op="decorated-retry-task"):
+                        task_func(task_to_run, db_session)
 
         return wrapper
 
