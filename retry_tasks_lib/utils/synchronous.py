@@ -247,14 +247,13 @@ def retryable_task(
         @wraps(task_func)
         def wrapper(retry_task_id: int) -> None:
 
-            with trace(op="rq-tasks-decorator") as span:
+            with db_session_factory() as db_session:
+                with trace(op="rq-tasks-decorator") as span:
 
-                # this is to prevent session pool sharing between parent and forked process:
-                # https://docs.sqlalchemy.org/en/14/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
-                if not USE_NULL_POOL:
-                    db_session_factory.kw["bind"].dispose(close=False)
-
-                with db_session_factory() as db_session:
+                    # this is to prevent session pool sharing between parent and forked process:
+                    # https://docs.sqlalchemy.org/en/14/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
+                    if not USE_NULL_POOL:
+                        db_session_factory.kw["bind"].dispose(close=False)
 
                     eligible_task_ids: set = {retry_task_id}
                     if exclusive_constraints:
