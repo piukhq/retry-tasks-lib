@@ -179,7 +179,11 @@ def _route_task_execution(
             )
             this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
         else:
-            this_task.update_task(db_session, status=RetryTaskStatuses.IN_PROGRESS, increase_attempts=True)
+            this_task.update_task(
+                db_session,
+                status=RetryTaskStatuses.IN_PROGRESS,
+                increase_attempts=this_task.status != RetryTaskStatuses.WAITING,
+            )
             can_run = True
 
     return can_run, this_task
