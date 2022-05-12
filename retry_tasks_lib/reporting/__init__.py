@@ -71,3 +71,36 @@ def report_anomalous_tasks(*, session_maker: sessionmaker, project_name: str, ga
 
     except Exception as ex:  # pylint: disable=broad-except
         sentry_sdk.capture_exception(ex)
+
+
+def report_tasks_summary(*, session_maker: sessionmaker, project_name: str, gauge: "Gauge") -> None:
+    """
+    Query a database to find the current total runs of a task type, and what status they are in
+
+    Parameters:
+        session_maker: A sessionmaker factory for the database
+        project_name:  The name of the project for reporting
+        guage:         An instance of prometheus_client.Gauge.
+                       The Guage must have labels of ("app", "task_name", "status")
+    """
+    logger.info(f"Updating {gauge} metrics ...")
+    try:
+        with session_maker() as db_session:
+            res = (
+                db_session.execute(
+                    select(TaskType.name, RetryTask.status, func.count(RetryTask.retry_task_id).label("count"))
+                    .join(TaskType)
+                    .group_by(TaskType.name, RetryTask.status)
+                )
+                .mappings()
+                .all()
+            )
+            for row in res:
+                gauge.labels(
+                    app=project_name,
+                    task_name=row["name"],
+                    status=RetryTaskStatuses(row["status"]).name,
+                ).set(int(row["count"]))
+
+    except Exception as ex:  # pylint: disable=broad-except
+        sentry_sdk.capture_exception(ex)
