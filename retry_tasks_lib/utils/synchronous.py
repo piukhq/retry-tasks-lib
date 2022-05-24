@@ -401,7 +401,7 @@ def enqueue_retry_task(
     return job
 
 
-def _get_pending_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> list[RetryTask]:
+def _get_pending_and_waiting_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> list[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -411,7 +411,7 @@ def _get_pending_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) ->
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
-                    RetryTask.status == RetryTaskStatuses.PENDING,
+                    RetryTask.status.in_({RetryTaskStatuses.PENDING, RetryTaskStatuses.WAITING}),
                 )
             )
         )
@@ -444,7 +444,7 @@ def enqueue_many_retry_tasks(
         return
 
     retry_tasks: list[RetryTask] = sync_run_query(
-        _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
+        _get_pending_and_waiting_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
     )
 
     tasks_by_queue: defaultdict[str, list[RetryTask]] = defaultdict(list)
