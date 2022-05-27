@@ -11,7 +11,7 @@ You'll need to install:
 
 ## Installing libs
 
-- `poetry install -E admin`
+- `poetry install -E admin -E reporting`
 
 ## Running tests
 

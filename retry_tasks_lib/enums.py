@@ -3,10 +3,6 @@ from enum import Enum
 from typing import Any
 
 
-def to_bool(v: str) -> bool:
-    return v.lower() in ["true", "1", "t", "yes", "y"]
-
-
 class RetryTaskStatuses(Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
