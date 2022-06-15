@@ -112,7 +112,9 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
         await async_run_query(_rollback, db_session, rollback_on_exc=False)
 
 
-async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: Any) -> None:
+async def enqueue_many_retry_tasks(
+    db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: Any, raise_exc: bool = False
+) -> None:
     if not retry_tasks_ids:
         logger.warning(
             "async 'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead."
@@ -154,5 +156,7 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
         await async_run_query(_commit, db_session, rollback_on_exc=False)
 
     except Exception as ex:  # pylint: disable=broad-except
+        if raise_exc:
+            raise
         sentry_sdk.capture_exception(ex)
         await async_run_query(_rollback, db_session, rollback_on_exc=False)
