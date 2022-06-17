@@ -1,3 +1,5 @@
+import json
+
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -45,10 +47,14 @@ class RetryTask(TmpBase, TimestampMixin):
     task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy="joined")
 
     def get_task_type_key_values(self, values: list[tuple[int, str]]) -> list["TaskTypeKeyValue"]:
-        return [
-            TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=value)
-            for key_id, value in values
-        ]
+        task_type_key_values: list[TaskTypeKeyValue] = []
+        for key_id, value in values:
+            serialization_fn = json.dumps if isinstance(value, (dict, list)) else str
+            val = serialization_fn(value)
+            task_type_key_values.append(
+                TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=val)
+            )
+        return task_type_key_values
 
     def get_params(self) -> dict:
         task_params: dict = {}

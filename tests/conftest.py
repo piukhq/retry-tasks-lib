@@ -86,6 +86,7 @@ def task_type_keys() -> list[tuple[str, TaskParamsKeyTypes]]:
         ("task-type-key-bool", TaskParamsKeyTypes.BOOLEAN),
         ("task-type-key-date", TaskParamsKeyTypes.DATE),
         ("task-type-key-datetime", TaskParamsKeyTypes.DATETIME),
+        ("task-type-key-json", TaskParamsKeyTypes.JSON),
     ]
 
 

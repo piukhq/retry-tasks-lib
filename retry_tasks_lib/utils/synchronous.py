@@ -320,7 +320,7 @@ def sync_create_task(db_session: Session, *, task_type_name: str, params: dict[s
     key_ids_by_name = task_type.get_key_ids_by_name()
 
     db_session.bulk_save_objects(
-        retry_task.get_task_type_key_values([(key_ids_by_name[key], str(val)) for key, val in params.items()])
+        retry_task.get_task_type_key_values([(key_ids_by_name[key], val) for key, val in params.items()])
     )
 
     db_session.flush()
@@ -343,7 +343,7 @@ def sync_create_many_tasks(
     db_session.flush()
 
     for retry_task, params in zip(retry_tasks, params_list):
-        values = [(keys[k], str(v)) for k, v in params.items()]
+        values = [(keys[k], v) for k, v in params.items()]
         db_session.bulk_save_objects(retry_task.get_task_type_key_values(values))
 
     db_session.flush()

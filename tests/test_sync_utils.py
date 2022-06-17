@@ -1,7 +1,7 @@
 # pylint: disable=unused-argument, no-value-for-parameter
 
 from datetime import datetime, timedelta, timezone
-from typing import Generator
+from typing import Any, Generator
 from unittest import mock
 
 import pytest
@@ -351,10 +351,11 @@ def test_sync_create_task_and_get_retry_task(sync_db_session: "Session", task_ty
 def test_sync_create_many_tasks_and_get_retry_task(
     sync_db_session: "Session", task_type_with_keys_sync: TaskType
 ) -> None:
-    params_list = [
+    params_list: list[dict[str, Any]] = [
         {"task-type-key-str": "a_string", "task-type-key-int": 42},
         {"task-type-key-str": "b_string", "task-type-key-int": 43},
         {"task-type-key-str": "c_string", "task-type-key-int": 44},
+        {"task-type-key-str": "c_string", "task-type-key-json": {"x": "y"}},
     ]
     retry_tasks = sync_create_many_tasks(
         db_session=sync_db_session, task_type_name="task-type", params_list=params_list
