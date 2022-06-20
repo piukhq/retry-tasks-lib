@@ -32,7 +32,7 @@ async def async_create_task(db_session: AsyncSession, *, task_type_name: str, pa
     await db_session.flush()
     key_ids_by_name = task_type.get_key_ids_by_name()
     db_session.add_all(
-        retry_task.get_task_type_key_values([(key_ids_by_name[key], str(val)) for (key, val) in params.items()])
+        retry_task.get_task_type_key_values([(key_ids_by_name[key], val) for (key, val) in params.items()])
     )
     await db_session.flush()
     return retry_task

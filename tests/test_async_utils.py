@@ -200,7 +200,7 @@ async def test__get_pending_retry_tasks(
 
 @pytest.mark.asyncio
 async def test_async_create_task(async_db_session: "AsyncSession", task_type_with_keys_async: TaskType) -> None:
-    params = {"task-type-key-str": "astring", "task-type-key-int": 42}
+    params = {"task-type-key-str": "astring", "task-type-key-int": 42, "task-type-key-json": ["list", "of", "stuff"]}
     retry_task = await async_create_task(
         db_session=async_db_session,
         task_type_name="task-type",

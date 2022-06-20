@@ -1,9 +1,11 @@
+import enum
+import json
+
 from datetime import date, datetime
-from enum import Enum
 from typing import Any
 
 
-class RetryTaskStatuses(Enum):
+class RetryTaskStatuses(enum.Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     RETRYING = "retrying"
@@ -24,19 +26,28 @@ class RetryTaskStatuses(Enum):
         return [cls.FAILED.name, cls.CANCELLED.name]
 
 
-class TaskParamsKeyTypes(Enum):
-    STRING = str
-    INTEGER = int
-    FLOAT = float
-    BOOLEAN = bool
-    DATE = date
-    DATETIME = datetime
+class TaskParamsKeyTypes(enum.Enum):
+    STRING = enum.auto()
+    INTEGER = enum.auto()
+    FLOAT = enum.auto()
+    BOOLEAN = enum.auto()
+    DATE = enum.auto()
+    DATETIME = enum.auto()
+    JSON = enum.auto()
 
-    def convert_value(self, v: str) -> Any:
-        if self.value == bool:
-            return v.lower() in ["true", "1", "t", "yes", "y"]
-
-        if self.value in [date, datetime]:
-            return self.value.fromisoformat(v)
-
-        return self.value(v)
+    def convert_value(self, v: str) -> Any:  # pylint: disable=too-many-return-statements
+        match self:
+            case TaskParamsKeyTypes.STRING:
+                return str(v)
+            case TaskParamsKeyTypes.INTEGER:
+                return int(v)
+            case TaskParamsKeyTypes.FLOAT:
+                return float(v)
+            case TaskParamsKeyTypes.BOOLEAN:
+                return v.lower() in ["true", "1", "t", "yes", "y"]
+            case TaskParamsKeyTypes.DATE:
+                return date.fromisoformat(v)
+            case TaskParamsKeyTypes.DATETIME:
+                return datetime.fromisoformat(v)
+            case TaskParamsKeyTypes.JSON:
+                return json.loads(v)
