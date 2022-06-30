@@ -1,10 +1,12 @@
 import logging
 
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import sentry_sdk
 
+from rq import Queue
 from sqlalchemy import func
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
@@ -15,6 +17,7 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 
 if TYPE_CHECKING:
     from prometheus_client import Gauge
+    from redis import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -102,5 +105,25 @@ def report_tasks_summary(*, session_maker: sessionmaker, project_name: str, gaug
                     status=RetryTaskStatuses(row["status"]).name,
                 ).set(int(row["count"]))
 
+    except Exception as ex:  # pylint: disable=broad-except
+        sentry_sdk.capture_exception(ex)
+
+
+def report_queue_lengths(*, redis: "Redis", project_name: str, gauge: "Gauge", queue_names: list[str]) -> None:
+    """
+    Inspect RQ queues to report queue length
+
+    Parameters:
+        redis:        A redis connection instance
+        project_name: The name of the project for reporting
+        queue_names:  The queue names to report on
+        guage:        An instance of prometheus_client.Gauge.
+                      The Guage must have labels of ("app", "queue_name")
+    """
+    logger.info(f"Updating {gauge} metrics ...")
+    try:
+        for queue_name in queue_names:
+            queue = Queue(queue_name, connection=redis)
+            gauge.labels(app=project_name, queue_name=queue_name).set(len(queue))
     except Exception as ex:  # pylint: disable=broad-except
         sentry_sdk.capture_exception(ex)
