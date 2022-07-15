@@ -2,6 +2,7 @@
 omit = tests
        retry_tasks_lib/db/*
        retry_tasks_lib/admin/*
+       retry_tasks_lib/reporting/*
 branch = True
 
 [report]
