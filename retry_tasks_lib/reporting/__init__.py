@@ -33,12 +33,26 @@ def report_anomalous_tasks(*, session_maker: sessionmaker, project_name: str, ga
                        The Guage must have labels of ("app", "task_name", "status")
     """
     logger.info(f"Updating {gauge} metrics ...")
+
+    results: dict[str, dict[str, int]] = {}
+
     try:
         with session_maker() as db_session:
+            for task_type_name in db_session.execute(select(TaskType.name)).scalars().all():
+                results[task_type_name] = {
+                    RetryTaskStatuses.PENDING.name: 0,
+                    RetryTaskStatuses.IN_PROGRESS.name: 0,
+                    RetryTaskStatuses.WAITING.name: 0,
+                }
+
             now = datetime.now(tz=timezone.utc)
             res = (
                 db_session.execute(
-                    select(TaskType.name, RetryTask.status, func.count(RetryTask.retry_task_id).label("count"))
+                    select(
+                        TaskType.name.label("task_name"),
+                        RetryTask.status,
+                        func.count(RetryTask.retry_task_id).label("count"),
+                    )
                     .join(TaskType)
                     .where(
                         or_(
@@ -66,11 +80,11 @@ def report_anomalous_tasks(*, session_maker: sessionmaker, project_name: str, ga
                 .all()
             )
             for row in res:
-                gauge.labels(
-                    app=project_name,
-                    task_name=row["name"],
-                    status=RetryTaskStatuses(row["status"]).name,
-                ).set(int(row["count"]))
+                results[row.task_name][row.status.name] = int(row.count)
+
+        for task_name, values in results.items():
+            for status, count in values.items():
+                gauge.labels(app=project_name, task_name=task_name, status=status).set(count)
 
     except Exception as ex:  # pylint: disable=broad-except
         sentry_sdk.capture_exception(ex)
@@ -87,11 +101,16 @@ def report_tasks_summary(*, session_maker: sessionmaker, project_name: str, gaug
                        The Guage must have labels of ("app", "task_name", "status")
     """
     logger.info(f"Updating {gauge} metrics ...")
+    results: dict[str, dict[str, int]] = {}
     try:
         with session_maker() as db_session:
             res = (
                 db_session.execute(
-                    select(TaskType.name, RetryTask.status, func.count(RetryTask.retry_task_id).label("count"))
+                    select(
+                        TaskType.name.label("task_name"),
+                        RetryTask.status,
+                        func.count(RetryTask.retry_task_id).label("count"),
+                    )
                     .join(TaskType)
                     .group_by(TaskType.name, RetryTask.status)
                 )
@@ -99,11 +118,14 @@ def report_tasks_summary(*, session_maker: sessionmaker, project_name: str, gaug
                 .all()
             )
             for row in res:
-                gauge.labels(
-                    app=project_name,
-                    task_name=row["name"],
-                    status=RetryTaskStatuses(row["status"]).name,
-                ).set(int(row["count"]))
+                if row.task_name not in results:
+                    results[row.task_name] = {status.name: 0 for status in RetryTaskStatuses}
+
+                results[row.task_name][row.status.name] = int(row.count)
+
+        for task_name, values in results.items():
+            for status, count in values.items():
+                gauge.labels(app=project_name, task_name=task_name, status=status).set(count)
 
     except Exception as ex:  # pylint: disable=broad-except
         sentry_sdk.capture_exception(ex)
