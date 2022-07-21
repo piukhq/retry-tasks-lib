@@ -50,6 +50,14 @@ class RetryTaskAdminBase(ModelView):
         "status",
         "params",
     )
+    form_ajax_refs = {
+        "task_type": {
+            "fields": ("task_type_id",),
+            "placeholder": "Please select",
+            "page_size": 10,
+            "minimum_input_length": 0,
+        }
+    }
     column_formatters = {
         "params": lambda view, c, model, n: Markup("<p>%s</p>")
         % Markup(
@@ -185,8 +193,30 @@ class TaskTypeKeyAdminBase(ModelView):
     column_searchable_list = ("name",)
     column_filters = ("task_type.name", "type")
     form_columns = ("task_type", "name", "type")
+    form_ajax_refs = {
+        "task_type": {
+            "fields": ("task_type_id",),
+            "placeholder": "Please select",
+            "page_size": 10,
+            "minimum_input_length": 0,
+        }
+    }
 
 
 class TaskTypeKeyValueAdminBase(ModelView):
     column_searchable_list = ("value",)
     column_filters = ("task_type_key.task_type.name", "task_type_key.task_type_key_id", "retry_task.retry_task_id")
+    form_ajax_refs = {
+        "task_type_key": {
+            "fields": ("task_type_key_id",),
+            "placeholder": "Please select",
+            "page_size": 10,
+            "minimum_input_length": 0,
+        },
+        "retry_task": {
+            "fields": ("retry_task_id",),
+            "placeholder": "Please select",
+            "page_size": 10,
+            "minimum_input_length": 0,
+        },
+    }
