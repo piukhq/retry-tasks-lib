@@ -1,3 +1,5 @@
+import time
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -189,12 +191,14 @@ def _route_task_execution(
     return can_run, this_task
 
 
+# pylint: disable=too-complex
 def retryable_task(
     *,
     db_session_factory: sessionmaker,
     exclusive_constraints: list[RetryTaskAdditionalQueryData] | None = None,
     redis_connection: Any = None,
     requeue_delay_range: DelayRangeType | None = None,
+    metrics_callback_fn: Callable[[float, str], None] | None = None,
 ) -> Callable:
     """
     Decorator for retry task functions which will move the task to be run into
@@ -295,7 +299,16 @@ def retryable_task(
 
                 if can_run:
                     with trace(op="decorated-retry-task"):
-                        task_func(task_to_run, db_session)
+                        start = time.perf_counter()
+                        try:
+                            task_func(task_to_run, db_session)
+                        finally:
+                            end = time.perf_counter()
+                            if metrics_callback_fn:
+                                try:
+                                    metrics_callback_fn(end - start, task_to_run.task_type.name)
+                                except Exception:  # pylint: disable=broad-except
+                                    logger.error("Failed to call metrics callback fn")
 
         return wrapper
 
