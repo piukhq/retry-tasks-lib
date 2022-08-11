@@ -59,8 +59,9 @@ class RetryTask(TmpBase, TimestampMixin):
     def get_params(self) -> dict:
         task_params: dict = {}
         for value in self.task_type_key_values:
-            key = value.task_type_key
-            task_params[key.name] = key.type.convert_value(value.value)
+            if value.value != str(None):
+                key = value.task_type_key
+                task_params[key.name] = key.type.convert_value(value.value)
 
         return task_params
 
