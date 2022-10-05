@@ -14,11 +14,15 @@ class RetryTaskStatuses(enum.Enum):
     WAITING = "waiting"
     CANCELLED = "cancelled"
     REQUEUED = "requeued"
+    CLEANUP = "cleanup"
+    CLEANUP_FAILED = "cleanupfailed"
 
     @classmethod
     def cancellable_statuses_names(cls) -> list[str]:
         return [
-            task_status.name for task_status in cls if task_status not in [cls.SUCCESS, cls.CANCELLED, cls.REQUEUED]
+            task_status.name
+            for task_status in cls
+            if task_status not in [cls.SUCCESS, cls.CANCELLED, cls.REQUEUED, cls.IN_PROGRESS]
         ]
 
     @classmethod

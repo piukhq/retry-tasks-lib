@@ -102,6 +102,7 @@ class TaskType(TmpBase, TimestampMixin):
     task_type_id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, index=True, unique=True)
     path = Column(String, nullable=False)
+    cleanup_handler_path = Column(String, nullable=True)
     error_handler_path = Column(String, nullable=False)
     queue_name = Column(String, nullable=False)
 

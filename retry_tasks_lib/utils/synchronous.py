@@ -399,22 +399,33 @@ def enqueue_retry_task_delay(
 
 
 def enqueue_retry_task(
-    *, connection: Any, retry_task: RetryTask, failure_ttl: int = DEFAULT_FAILURE_TTL, at_front: bool = False
+    *,
+    connection: Any,
+    retry_task: RetryTask,
+    failure_ttl: int = DEFAULT_FAILURE_TTL,
+    at_front: bool = False,
+    use_clean_hanlder_path: bool = False,
+    use_task_type_exc_handler: bool = True,
 ) -> rq.job.Job:
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
+
+    job_metadata = (
+        {} if not use_task_type_exc_handler else {"error_handler_path": retry_task.task_type.error_handler_path}
+    )
+    function_path = retry_task.task_type.cleanup_handler_path if use_clean_hanlder_path else retry_task.task_type.path
     job = q.enqueue(
-        retry_task.task_type.path,
+        function_path,
         retry_task_id=retry_task.retry_task_id,
         failure_ttl=failure_ttl,
         at_front=at_front,
-        meta={"error_handler_path": retry_task.task_type.error_handler_path},
+        meta=job_metadata,
     )
 
     logger.info(f"Enqueued task for execution: {job}")
     return job
 
 
-def _get_pending_and_waiting_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> list[RetryTask]:
+def _get_enqueuable_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> list[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -424,7 +435,13 @@ def _get_pending_and_waiting_retry_tasks(db_session: Session, retry_tasks_ids: l
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
-                    RetryTask.status.in_({RetryTaskStatuses.PENDING, RetryTaskStatuses.WAITING}),
+                    RetryTask.status.in_(
+                        {
+                            RetryTaskStatuses.PENDING,
+                            RetryTaskStatuses.WAITING,
+                            RetryTaskStatuses.CLEANUP,
+                        }
+                    ),
                 )
             )
         )
@@ -443,6 +460,7 @@ def _get_pending_and_waiting_retry_tasks(db_session: Session, retry_tasks_ids: l
     return retry_tasks
 
 
+# pylint: disable=too-many-locals
 def enqueue_many_retry_tasks(
     db_session: Session,
     *,
@@ -450,6 +468,8 @@ def enqueue_many_retry_tasks(
     connection: Any,
     failure_ttl: int = DEFAULT_FAILURE_TTL,
     at_front: bool = False,
+    use_cleanup_hanlder_path: bool = False,
+    use_task_type_exc_handler: bool = True,
 ) -> None:
 
     if not retry_tasks_ids:
@@ -457,7 +477,7 @@ def enqueue_many_retry_tasks(
         return
 
     retry_tasks: list[RetryTask] = sync_run_query(
-        _get_pending_and_waiting_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
+        _get_enqueuable_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
     )
 
     tasks_by_queue: defaultdict[str, list[RetryTask]] = defaultdict(list)
@@ -466,15 +486,25 @@ def enqueue_many_retry_tasks(
 
     pipeline = connection.pipeline()
     queued_jobs: list[rq.job.Job] = []
+
     for queue_name, tasks in tasks_by_queue.items():
         q = rq.Queue(queue_name, connection=connection)
         prepared: list[EnqueueData] = []
         for task in tasks:
+            if use_cleanup_hanlder_path and task.status is not RetryTaskStatuses.CLEANUP:
+                logger.warning(
+                    f"Skipping clean up for task with id: {task.retry_task_id}, the task must be in CLEANUP state"
+                )
+                continue
+
+            function_path = task.task_type.cleanup_handler_path if use_cleanup_hanlder_path else task.task_type.path
             prepared.append(
                 rq.Queue.prepare_data(
-                    task.task_type.path,
+                    function_path,
                     kwargs={"retry_task_id": task.retry_task_id},
-                    meta={"error_handler_path": task.task_type.error_handler_path},
+                    meta={}
+                    if not use_task_type_exc_handler
+                    else {"error_handler_path": task.task_type.error_handler_path},
                     failure_ttl=failure_ttl,
                     at_front=at_front,
                 )
@@ -485,3 +515,53 @@ def enqueue_many_retry_tasks(
 
     pipeline.execute()
     logger.info(f"Queued {len(queued_jobs)} jobs.")
+
+
+def cleanup_handler(db_session_factory: sessionmaker) -> Callable:
+    """Decorator implemented to handle task statuses updating for task clean up functions.\n
+    Only to be used for clean up handling when cancelling a task.
+
+    `Task status -> CANCELLED` when clean up fn is successful. \n
+    `Task status -> CLEANUP_FAILED` when clean up fn fails.
+    """
+
+    def decorator(clean_fn: Callable) -> Callable:
+        @wraps(clean_fn)
+        def wrapper(retry_task_id: int) -> None:
+            with db_session_factory() as db_session:
+                retry_task_to_clean = db_session.execute(
+                    select(RetryTask)
+                    .where(RetryTask.retry_task_id == retry_task_id)
+                    .options(selectinload(RetryTask.task_type_key_values))
+                    .with_for_update(skip_locked=True)
+                ).scalar_one_or_none()
+
+                if retry_task_to_clean:
+                    logger.debug("Calling the clean up handler function for task")
+                    try:
+                        clean_fn(retry_task_to_clean, db_session)
+                    except:  # pylint: disable=bare-except
+                        logger.exception(
+                            "Failed to run clean up handler function for task: %s", retry_task_to_clean.retry_task_id
+                        )
+                        retry_task_to_clean.update_task(
+                            db_session,
+                            status=RetryTaskStatuses.CLEANUP_FAILED,
+                            clear_next_attempt_time=True,
+                            increase_attempts=False,
+                        )
+                    else:
+                        retry_task_to_clean.update_task(
+                            db_session,
+                            status=RetryTaskStatuses.CANCELLED,
+                            clear_next_attempt_time=True,
+                            increase_attempts=False,
+                        )
+                        logger.info(
+                            "Successfully ran the clean handler function for task: %s",
+                            retry_task_to_clean.retry_task_id,
+                        )
+
+        return wrapper
+
+    return decorator

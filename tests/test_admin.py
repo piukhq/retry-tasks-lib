@@ -5,6 +5,7 @@ from unittest import mock
 
 import pytest
 
+from pytest_mock import MockerFixture
 from sqlalchemy import func
 from sqlalchemy.future import select
 
@@ -184,3 +185,79 @@ def test_retry_task_admin_cancel_action_status_not_allowed(
             f"No elegible task to cancel. Tasks must be in one of the following states: {cancellable_statuses}",
             category="error",
         )
+
+
+def test_retry_task_admin_cancel_action_with_cleanup(
+    mocker: MockerFixture,
+    sync_db_session: "Session",
+    admin: RetryTaskAdminBase,
+    retry_task_sync_with_cleanup: RetryTask,
+    redis: "Redis",
+) -> None:
+    mock_flash = mocker.patch("retry_tasks_lib.admin.views.flash")
+    mock_enqueue_many_retry_tasks = mocker.patch("retry_tasks_lib.admin.views.enqueue_many_retry_tasks")
+
+    for status in RetryTaskStatuses.cancellable_statuses_names():
+        retry_task_sync_with_cleanup.status = status
+        sync_db_session.commit()
+
+        admin.action_cancel_tasks([retry_task_sync_with_cleanup.retry_task_id])
+
+        sync_db_session.refresh(retry_task_sync_with_cleanup)
+        assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+
+        mock_enqueue_many_retry_tasks.assert_called_with(
+            db_session=sync_db_session,
+            connection=redis,
+            retry_tasks_ids=[retry_task_sync_with_cleanup.retry_task_id],
+            use_cleanup_hanlder_path=True,
+            use_task_type_exc_handler=False,
+        )
+        mock_flash.assert_called_with("Started clean up jobs for selected tasks")
+
+
+def test_retry_task_admin_cancel_action_with_cleanup_multiple_tasks(
+    mocker: mock.MagicMock,
+    sync_db_session: "Session",
+    admin: RetryTaskAdminBase,
+    retry_task_sync_with_cleanup: RetryTask,
+    redis: "Redis",
+) -> None:
+    mock_flash = mocker.patch("retry_tasks_lib.admin.views.flash")
+    mock_enqueue_many_retry_tasks = mocker.patch("retry_tasks_lib.admin.views.enqueue_many_retry_tasks")
+
+    first_task = retry_task_sync_with_cleanup
+    second_task = sync_create_task(
+        sync_db_session,
+        task_type_name=first_task.task_type.name,
+        params={"task-type-key-int": 42},
+    )
+    third_task = sync_create_task(
+        sync_db_session,
+        task_type_name=first_task.task_type.name,
+        params={"task-type-key-int": 42},
+    )
+
+    for status in RetryTaskStatuses.cancellable_statuses_names():
+        first_task.status = status
+        second_task.status = status
+        third_task.status = status
+        sync_db_session.commit()
+
+        admin.action_cancel_tasks([first_task.retry_task_id, second_task.retry_task_id, third_task.retry_task_id])
+
+        sync_db_session.refresh(first_task)
+        sync_db_session.refresh(second_task)
+        sync_db_session.refresh(third_task)
+
+        assert first_task.status == RetryTaskStatuses.CLEANUP
+        assert second_task.status == RetryTaskStatuses.CLEANUP
+        assert third_task.status == RetryTaskStatuses.CLEANUP
+        mock_enqueue_many_retry_tasks.assert_called_with(
+            db_session=sync_db_session,
+            connection=redis,
+            retry_tasks_ids=[first_task.retry_task_id, second_task.retry_task_id, third_task.retry_task_id],
+            use_cleanup_hanlder_path=True,
+            use_task_type_exc_handler=False,
+        )
+        mock_flash.assert_called_with("Started clean up jobs for selected tasks")
