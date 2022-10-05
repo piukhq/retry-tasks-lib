@@ -18,7 +18,8 @@ from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
 from retry_tasks_lib.utils.synchronous import (
     IncorrectRetryTaskStatusError,
     RetryTaskAdditionalQueryData,
-    _get_pending_and_waiting_retry_tasks,
+    _get_enqueuable_retry_tasks,
+    cleanup_handler,
     enqueue_many_retry_tasks,
     enqueue_retry_task,
     enqueue_retry_task_delay,
@@ -313,13 +314,13 @@ def test__get_pending_retry_tasks(mocker: MockerFixture, sync_db_session: Sessio
     mock_log = mocker.patch("retry_tasks_lib.utils.synchronous.logger")
     assert retry_task_sync.status == RetryTaskStatuses.PENDING
     with pytest.raises(ValueError):
-        _get_pending_and_waiting_retry_tasks(sync_db_session, [101])
+        _get_enqueuable_retry_tasks(sync_db_session, [101])
 
-    _get_pending_and_waiting_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id])
+    _get_enqueuable_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id])
     mock_log.error.assert_not_called()
 
     unexpected_id = retry_task_sync.retry_task_id + 1
-    _get_pending_and_waiting_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id, unexpected_id])
+    _get_enqueuable_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
         f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {set([unexpected_id])}"
     )
@@ -375,3 +376,167 @@ def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) 
     retry_task_sync.status = RetryTaskStatuses.IN_PROGRESS
     sync_db_session.commit()
     get_retry_task(db_session=sync_db_session, retry_task_id=retry_task_sync.retry_task_id)
+
+
+def test_enqueue_retry_task_with_cleanup_handling(
+    mocker: MockerFixture,
+    retry_task_sync_with_cleanup: RetryTask,
+    sync_db_session: "Session",
+    redis: Redis,
+) -> None:
+    """Test the happy path of cancelling a `cancellable` task
+    A task in RETRYING, WAITING, CLEANUP and CLEANUP_FAILED state is cancellable
+    """
+    mock_logger = mocker.patch("retry_tasks_lib.utils.synchronous.logger")
+
+    q = rq.Queue(retry_task_sync_with_cleanup.task_type.queue_name, connection=redis)
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+
+    assert len(q.get_job_ids()) == 0
+    enqueue_many_retry_tasks(
+        db_session=sync_db_session,
+        connection=redis,
+        retry_tasks_ids=[retry_task_sync_with_cleanup.retry_task_id],
+        use_cleanup_hanlder_path=True,
+        use_task_type_exc_handler=False,
+    )
+
+    rq_job_ids = q.get_job_ids()
+    assert len(rq_job_ids) == 1
+    job = rq.job.Job.fetch(rq_job_ids[0], connection=redis)
+    assert job.kwargs == {"retry_task_id": retry_task_sync_with_cleanup.retry_task_id}
+    assert job.func_name == retry_task_sync_with_cleanup.task_type.cleanup_handler_path
+    assert job.meta == {}
+    mock_logger.info.assert_called_once_with(f"Queued {len(rq_job_ids)} jobs.")
+
+
+def test_enqueue_retry_task_with_multiple_cleanup_jobs(
+    mocker: MockerFixture,
+    retry_task_sync_with_cleanup: RetryTask,
+    sync_db_session: "Session",
+    redis: Redis,
+) -> None:
+    """Test the happy path of cancelling multiple `cancellable` task"""
+    mock_logger = mocker.patch("retry_tasks_lib.utils.synchronous.logger")
+
+    q = rq.Queue(retry_task_sync_with_cleanup.task_type.queue_name, connection=redis)
+
+    first_task = retry_task_sync_with_cleanup
+    second_task = sync_create_task(
+        sync_db_session,
+        task_type_name=first_task.task_type.name,
+        params={"task-type-key-int": 42},
+    )
+    second_task.status = RetryTaskStatuses.CLEANUP
+    sync_db_session.commit()
+
+    assert first_task.status == RetryTaskStatuses.CLEANUP
+
+    assert len(q.get_job_ids()) == 0
+    enqueue_many_retry_tasks(
+        db_session=sync_db_session,
+        connection=redis,
+        retry_tasks_ids=[first_task.retry_task_id, second_task.retry_task_id],
+        use_cleanup_hanlder_path=True,
+        use_task_type_exc_handler=False,
+    )
+
+    rq_job_ids = q.get_job_ids()
+    assert len(rq_job_ids) == 2
+    for job_id, task in zip(rq_job_ids, [first_task, second_task]):
+        job = rq.job.Job.fetch(job_id, connection=redis)
+        assert job.kwargs == {"retry_task_id": task.retry_task_id}
+        assert job.func_name == task.task_type.cleanup_handler_path
+        assert job.meta == {}
+
+    mock_logger.info.assert_called_once_with(f"Queued {len(rq_job_ids)} jobs.")
+
+
+def test_cancel_task_with_cleanup_hander_function_incorrect_status(
+    mocker: MockerFixture, retry_task_sync: RetryTask, sync_db_session: Session, redis: Redis
+) -> None:
+    """Test the case when a task is enqueued with `use_cleanup_hanlder_path` but is not in CLEANUP state"""
+    mock_logger = mocker.patch("retry_tasks_lib.utils.synchronous.logger")
+
+    q = rq.Queue(retry_task_sync.task_type.queue_name, connection=redis)
+
+    retry_task_sync.task_type.cleanup_handler_path = "tests.conftest.mock_cleanup_hanlder_fn_failure"
+    sync_db_session.commit()
+
+    assert retry_task_sync.status != RetryTaskStatuses.CLEANUP
+
+    assert len(q.get_job_ids()) == 0
+    enqueue_many_retry_tasks(
+        db_session=sync_db_session,
+        connection=redis,
+        retry_tasks_ids=[retry_task_sync.retry_task_id],
+        use_cleanup_hanlder_path=True,
+        use_task_type_exc_handler=False,
+    )
+
+    rq_job_ids = q.get_job_ids()
+    assert len(rq_job_ids) == 0
+    mock_logger.warning.assert_called_once_with(
+        f"Skipping clean up for task with id: {retry_task_sync.retry_task_id}, the task must be in CLEANUP state"
+    )
+
+
+def test_enqueue_retry_task_with_mock_cleanup_function(
+    mocker: MockerFixture,
+    retry_task_sync_with_cleanup: RetryTask,
+    sync_db_session: "Session",
+) -> None:
+    """Test the happy path of using a @cleanup_hanlder"""
+    mock_logger = mocker.patch("retry_tasks_lib.utils.synchronous.logger.info")
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+    attempts_before_cancel = retry_task_sync_with_cleanup.attempts
+
+    @cleanup_handler(db_session_factory=SyncSessionMaker)
+    def cleanup_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == retry_task_sync_with_cleanup.retry_task_id
+
+    cleanup_func(retry_task_sync_with_cleanup.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync_with_cleanup)
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CANCELLED
+    assert retry_task_sync_with_cleanup.attempts == attempts_before_cancel
+    assert retry_task_sync_with_cleanup.next_attempt_time is None
+
+    mock_logger.assert_called_once_with(
+        "Successfully ran the clean handler function for task: %s",
+        retry_task_sync_with_cleanup.retry_task_id,
+    )
+
+
+def test_enqueue_retry_task_with_mock_cleanup_function_failure(
+    mocker: MockerFixture,
+    retry_task_sync_with_cleanup: RetryTask,
+    sync_db_session: "Session",
+) -> None:
+    """Test the case of using a @cleanup_hanlder where the clean up function fails"""
+    mock_logger = mocker.patch("retry_tasks_lib.utils.synchronous.logger.exception")
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+    attempts_before_cancel = retry_task_sync_with_cleanup.attempts
+
+    wrong_retry_task_id = 2
+    assert retry_task_sync_with_cleanup.retry_task_id != wrong_retry_task_id
+
+    @cleanup_handler(db_session_factory=SyncSessionMaker)
+    def cleanup_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == wrong_retry_task_id
+
+    cleanup_func(retry_task_sync_with_cleanup.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync_with_cleanup)
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP_FAILED
+    assert retry_task_sync_with_cleanup.attempts == attempts_before_cancel
+    assert retry_task_sync_with_cleanup.next_attempt_time is None
+
+    mock_logger.assert_called_once_with(
+        "Failed to run clean up handler function for task: %s", retry_task_sync_with_cleanup.retry_task_id
+    )
