@@ -18,7 +18,7 @@ from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL
 from retry_tasks_lib.utils.synchronous import (
     IncorrectRetryTaskStatusError,
     RetryTaskAdditionalQueryData,
-    _get_pending_and_waiting_retry_tasks,
+    _get_enqueuable_retry_tasks,
     enqueue_many_retry_tasks,
     enqueue_retry_task,
     enqueue_retry_task_delay,
@@ -313,13 +313,13 @@ def test__get_pending_retry_tasks(mocker: MockerFixture, sync_db_session: Sessio
     mock_log = mocker.patch("retry_tasks_lib.utils.synchronous.logger")
     assert retry_task_sync.status == RetryTaskStatuses.PENDING
     with pytest.raises(ValueError):
-        _get_pending_and_waiting_retry_tasks(sync_db_session, [101])
+        _get_enqueuable_retry_tasks(sync_db_session, [101])
 
-    _get_pending_and_waiting_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id])
+    _get_enqueuable_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id])
     mock_log.error.assert_not_called()
 
     unexpected_id = retry_task_sync.retry_task_id + 1
-    _get_pending_and_waiting_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id, unexpected_id])
+    _get_enqueuable_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
         f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {set([unexpected_id])}"
     )

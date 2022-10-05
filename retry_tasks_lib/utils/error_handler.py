@@ -1,7 +1,5 @@
-import importlib
-
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import requests
 import rq
@@ -12,6 +10,7 @@ from sqlalchemy.orm.session import Session
 from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
+from retry_tasks_lib.utils import UnresolvableHandlerPath, resolve_callable_from_path
 from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -108,17 +107,15 @@ def handle_request_exception(
     )
 
 
-def job_meta_handler(job: rq.job.Job, exc_type: type, exc_value: Exception, traceback: "Traceback") -> bool:
+def job_meta_handler(job: rq.job.Job, exc_type: type, exc_value: Exception, traceback: "Traceback") -> Callable | bool:
     """Resolves any error handler stored in job.meta.
 
     Falls back to the default RQ error handler (unless worker
     disable_default_exception_handler flag is set)"""
     if error_handler_path := job.meta.get("error_handler_path"):
         try:
-            mod, func = error_handler_path.rsplit(".", 1)
-            mod = importlib.import_module(mod)
-            handler = getattr(mod, func)
-            return handler(job, exc_type, exc_value, traceback)
-        except (ValueError, ModuleNotFoundError, AttributeError) as ex:
+            error_handler = resolve_callable_from_path(error_handler_path)
+            return error_handler(job, exc_type, exc_value, traceback)
+        except UnresolvableHandlerPath as ex:
             logger.warning(f"Could not import error handler for job {job} (meta={job.meta}): {ex}")
     return True

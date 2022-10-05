@@ -143,15 +143,16 @@ class RetryTaskAdminBase(ModelView):
 
     @action(
         "cancel",
-        "Cancel",
+        "Clean up and cancel",
         "Are you sure you want to cancel the selected tasks? This can break data consistency within our system.",
     )
     def action_cancel_tasks(self, ids: list[str]) -> None:
         required_statuses = RetryTaskStatuses.cancellable_statuses_names()
-        tasks = (
+        tasks: list[RetryTask] = (
             self.session.execute(
                 select(RetryTask)
-                .options(selectinload(RetryTask.task_type_key_values))
+                .options(selectinload(RetryTask.task_type_key_values))  # Why?
+                .options(selectinload(RetryTask.task_type))
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(ids),
@@ -166,21 +167,33 @@ class RetryTaskAdminBase(ModelView):
                 f"No elegible task to cancel. Tasks must be in one of the following states: {required_statuses}",
                 category="error",
             )
-            return
-        try:
-            for task in tasks:
-                task.status = "CANCELLED"
 
-            self.session.commit()
-
-        except Exception as ex:  # pylint: disable=broad-except
-            self.session.rollback()
-            if not self.handle_view_exception(ex):
-                raise
-            flash("Failed to cancel selected tasks.", category="error")
         else:
-            self.session.commit()
-            flash("Cancelled selected elegible tasks")
+            for task in tasks:
+                clean_up_tasks = []
+                if task.task_type.cleanup_handler_path:
+                    task.status = "CLEANUP"
+                    clean_up_tasks.append(task)
+                else:
+                    task.status = "CANCELLED"
+                    msg = "Cancelled selected elegible tasks"
+
+                if clean_up_tasks:
+                    enqueue_many_retry_tasks(
+                        db_session=self.session,
+                        connection=self.redis,
+                        retry_tasks_ids=[task.retry_task_id for task in tasks],
+                        use_task_type_exc_handler=False,
+                    )
+                    msg = "Started clean up jobs for selected tasks"
+            try:
+                self.session.commit()
+                flash(msg)
+            except Exception as ex:  # pylint: disable=broad-except
+                self.session.rollback()
+                if not self.handle_view_exception(ex):
+                    raise
+                flash("Failed to cancel selected tasks.", category="error")
 
 
 class TaskTypeAdminBase(ModelView):
