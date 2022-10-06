@@ -184,3 +184,37 @@ def test_retry_task_admin_cancel_action_status_not_allowed(
             f"No elegible task to cancel. Tasks must be in one of the following states: {cancellable_statuses}",
             category="error",
         )
+
+
+@mock.patch("retry_tasks_lib.admin.views.flash")
+@mock.patch("retry_tasks_lib.admin.views.enqueue_many_retry_tasks")
+def test_retry_task_admin_cancel_action_with_cleanup(
+    mock_enqueue_many_retry_tasks: mock.MagicMock,
+    mock_flash: mock.MagicMock,
+    sync_db_session: "Session",
+    admin: RetryTaskAdminBase,
+    task_type_with_keys_and_cleanup_handler_path: TaskType,
+    redis: "Redis",
+) -> None:
+
+    for status in RetryTaskStatuses.cancellable_statuses_names():
+        retry_task = sync_create_task(
+            sync_db_session,
+            task_type_name=task_type_with_keys_and_cleanup_handler_path.name,
+            params={"task-type-key-int": 42},
+        )
+        retry_task.status = status
+        sync_db_session.commit()
+
+        admin.action_cancel_tasks([retry_task.retry_task_id])
+
+        sync_db_session.refresh(retry_task)
+
+        assert retry_task.status == RetryTaskStatuses.CLEANUP
+        mock_enqueue_many_retry_tasks.assert_called_with(
+            db_session=sync_db_session,
+            connection=redis,
+            retry_tasks_ids=[retry_task.retry_task_id],
+            use_task_type_exc_handler=False,
+        )
+        mock_flash.assert_called_with("Started clean up jobs for selected tasks")

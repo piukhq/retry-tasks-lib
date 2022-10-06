@@ -153,3 +153,25 @@ async def retry_task_async(async_db_session: "Session", task_type_with_keys_asyn
     async_db_session.add(task)
     await async_db_session.commit()
     return task
+
+
+@pytest.fixture(scope="function")
+def task_type_with_keys_and_cleanup_handler_path(
+    sync_db_session: "Session", task_type_keys: list[tuple[str, TaskParamsKeyTypes]]
+) -> TaskType:
+    task_type = TaskType(
+        name="task-type",
+        path="path.to.func",
+        queue_name="queue-name",
+        error_handler_path="path.to.error_handler",
+        cleanup_handler_path="path.to.cleanup_hanlder_fn",
+    )
+    sync_db_session.add(task_type)
+    sync_db_session.flush()
+    task_type_keys_objs: list[TaskTypeKey] = [
+        TaskTypeKey(name=key_name, type=key_type, task_type_id=task_type.task_type_id)
+        for key_name, key_type in task_type_keys
+    ]
+    sync_db_session.add_all(task_type_keys_objs)
+    sync_db_session.commit()
+    return task_type

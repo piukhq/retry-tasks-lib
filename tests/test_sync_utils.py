@@ -56,6 +56,8 @@ def test_retry_task_decorator_default_query_wrong_task_status(
             RetryTaskStatuses.RETRYING,
             RetryTaskStatuses.WAITING,
             RetryTaskStatuses.CANCELLED,
+            RetryTaskStatuses.CLEANUP,
+            RetryTaskStatuses.CLEANUP_FAILED,
         )
     ]:
         retry_task_sync.status = status
@@ -375,3 +377,29 @@ def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) 
     retry_task_sync.status = RetryTaskStatuses.IN_PROGRESS
     sync_db_session.commit()
     get_retry_task(db_session=sync_db_session, retry_task_id=retry_task_sync.retry_task_id)
+
+
+def test_cancel_task_with_clean_up_handling() -> None:
+    """Test the happy path of cancelling a `CANCELLABLE` task
+      A task in RETRYING, WAITING, CLEANUP and CLEANUP_FAILED state is cancellable
+      When a task with any of the above is cancelled with the admin, the task is `re-enqueued`
+      with CLEANUP state, and the task function (from task_type.path) is run. However this time, since
+      it was in CLEANUP state, we record this as the `prev_state` and then move the `re-enqueued` task to IN_PROGRESS
+      without increasing the attempts.
+
+      There is then a check for whether cleanup_handler_path exists on the retry_task.task_type.
+      If it does, that clean up function is imported and run. The job of the @retryable_task decorator is now done.
+
+      The clean up function which imported and run must be wrapped with the new @clean_up_hanlder decorator
+      which tries to run the clean up function. If successfull, the task status is moved to CANCELLED as the final state
+      or if it fails, the task status is moved to CLEANUP_FAILED as the final state with no `next_attempt_time`
+
+    Setup for happy path:
+    1. Setup mock task_type with cleanup_handler_path
+    2. Setup a mock clean up handler function (must match the cleanup_hanlder_path) and wrapped with clean up decorator
+    3. Setup a retry task object in CLEANUP state
+    4. Enqueue the task
+    5. Refresh the RetryTask table
+    6. Check that the task status is now CANCELLED and the attempts number is 1
+    """
+    pass  # pylint: disable=unnecessary-pass

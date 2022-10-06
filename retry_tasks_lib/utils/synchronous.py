@@ -167,7 +167,7 @@ def _route_task_execution(
 
         if this_task.status == RetryTaskStatuses.CANCELLED:
             logger.info(f"Task with retry_task_id {retry_task_id} has been cancelled. Removing from queue.")
-            return (False, this_task, None)
+            return (False, this_task, RetryTaskStatuses.CANCELLED)
 
         if this_task.status not in RUNNABLE_TASK_STATUSES:
             raise IncorrectRetryTaskStatusError(
@@ -480,6 +480,7 @@ def _get_enqueuable_retry_tasks(db_session: Session, retry_tasks_ids: list[int])
     return retry_tasks
 
 
+# pylint: disable=too-many-locals
 def enqueue_many_retry_tasks(
     db_session: Session,
     *,
@@ -530,11 +531,18 @@ def enqueue_many_retry_tasks(
 
 
 def clean_up_handler(clean_fn: Callable) -> Callable:
+    """Decorator implemented to handle task statuses updating for task clean up functions.\n
+    Only to be used for clean up handling when cancelling a task.
+
+    `Task status -> CANCELLED` when clean up fn is successful. \n
+    `Task status -> CLEANUP_FAILED` when clean up fn fails.
+    """
+
     def decorator(retry_task: RetryTask, db_session: "Session") -> None:
         logger.debug("Calling the clean up handler function for task")
         try:
             clean_fn(retry_task, db_session)
-        except:
+        except:  # pylint: disable=bare-except
             logger.exception("Failed to run clean function for task: %s", retry_task.retry_task_id)
             retry_task.update_task(
                 db_session,
