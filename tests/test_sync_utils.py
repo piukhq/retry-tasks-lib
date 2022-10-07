@@ -379,27 +379,68 @@ def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) 
     get_retry_task(db_session=sync_db_session, retry_task_id=retry_task_sync.retry_task_id)
 
 
-def test_cancel_task_with_clean_up_handling() -> None:
-    """Test the happy path of cancelling a `CANCELLABLE` task
-      A task in RETRYING, WAITING, CLEANUP and CLEANUP_FAILED state is cancellable
-      When a task with any of the above is cancelled with the admin, the task is `re-enqueued`
-      with CLEANUP state, and the task function (from task_type.path) is run. However this time, since
-      it was in CLEANUP state, we record this as the `prev_state` and then move the `re-enqueued` task to IN_PROGRESS
-      without increasing the attempts.
-
-      There is then a check for whether cleanup_handler_path exists on the retry_task.task_type.
-      If it does, that clean up function is imported and run. The job of the @retryable_task decorator is now done.
-
-      The clean up function which imported and run must be wrapped with the new @clean_up_hanlder decorator
-      which tries to run the clean up function. If successfull, the task status is moved to CANCELLED as the final state
-      or if it fails, the task status is moved to CLEANUP_FAILED as the final state with no `next_attempt_time`
-
-    Setup for happy path:
-    1. Setup mock task_type with cleanup_handler_path
-    2. Setup a mock clean up handler function (must match the cleanup_hanlder_path) and wrapped with clean up decorator
-    3. Setup a retry task object in CLEANUP state
-    4. Enqueue the task
-    5. Refresh the RetryTask table
-    6. Check that the task status is now CANCELLED and the attempts number is 1
+@mock.patch("tests.conftest.logging")
+def test_cancel_task_with_clean_up_handling(
+    mock_logger: mock.MagicMock, retry_task_sync_with_cleanup: RetryTask, sync_db_session: Session
+) -> None:
+    """Test the happy path of cancelling a `cancellable` task
+    A task in RETRYING, WAITING, CLEANUP and CLEANUP_FAILED state is cancellable
     """
-    pass  # pylint: disable=unnecessary-pass
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == retry_task_sync_with_cleanup.retry_task_id
+
+    task_func(retry_task_sync_with_cleanup.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync_with_cleanup)
+
+    mock_logger.info.assert_called_once_with("Running mock clean up function")
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CANCELLED
+
+
+@mock.patch("tests.conftest.logging")
+def test_cancel_task_with_clean_up_hander_function_failure(
+    mock_logger: mock.MagicMock, retry_task_sync_with_cleanup: RetryTask, sync_db_session: Session
+) -> None:
+    """Test the case when the clean up function which is in the retry_task.task_type.cleanup_handler_path fails"""
+    retry_task_sync_with_cleanup.task_type.cleanup_handler_path = "tests.conftest.mock_clean_up_hanlder_fn_failure"
+    sync_db_session.commit()
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == retry_task_sync_with_cleanup.retry_task_id
+
+    task_func(retry_task_sync_with_cleanup.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync_with_cleanup)
+
+    mock_logger.info.assert_called_once_with("Running mock clean up failure function")
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP_FAILED
+
+
+@mock.patch("retry_tasks_lib.utils.synchronous.logger")
+def test_cancel_task_with_bad_cleanup_hanlder_path(
+    mock_logger: mock.MagicMock, retry_task_sync_with_cleanup: RetryTask, sync_db_session: Session
+) -> None:
+    """Test the case when the retry_task.task_type.cleanup_handler_path fails to resolve and import the clean up fn"""
+    retry_task_sync_with_cleanup.task_type.cleanup_handler_path = "unresolvablepath"
+    sync_db_session.commit()
+
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+
+    @retryable_task(db_session_factory=SyncSessionMaker)
+    def task_func(retry_task: RetryTask, db_session: Session) -> None:
+        assert retry_task.retry_task_id == retry_task_sync_with_cleanup.retry_task_id
+
+    task_func(retry_task_sync_with_cleanup.retry_task_id)
+
+    sync_db_session.refresh(retry_task_sync_with_cleanup)
+
+    mock_logger.error.assert_called_once_with(
+        "Clean up path not resolved for task: %s", retry_task_sync_with_cleanup.retry_task_id
+    )
+    assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP_FAILED

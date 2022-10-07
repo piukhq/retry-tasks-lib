@@ -151,13 +151,14 @@ class RetryTaskAdminBase(ModelView):
         tasks: list[RetryTask] = (
             self.session.execute(
                 select(RetryTask)
-                .options(selectinload(RetryTask.task_type_key_values))  # Why?
+                .options(selectinload(RetryTask.task_type_key_values))
                 .options(selectinload(RetryTask.task_type))
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(ids),
                     RetryTask.status.in_(required_statuses),
                 )
+                .order_by(RetryTask.retry_task_id)
             )
             .scalars()
             .all()
@@ -169,8 +170,8 @@ class RetryTaskAdminBase(ModelView):
             )
 
         else:
+            clean_up_tasks = []
             for task in tasks:
-                clean_up_tasks = []
                 if task.task_type.cleanup_handler_path:
                     task.status = "CLEANUP"
                     clean_up_tasks.append(task)
@@ -178,14 +179,14 @@ class RetryTaskAdminBase(ModelView):
                     task.status = "CANCELLED"
                     msg = "Cancelled selected elegible tasks"
 
-                if clean_up_tasks:
-                    enqueue_many_retry_tasks(
-                        db_session=self.session,
-                        connection=self.redis,
-                        retry_tasks_ids=[task.retry_task_id for task in tasks],
-                        use_task_type_exc_handler=False,
-                    )
-                    msg = "Started clean up jobs for selected tasks"
+            if clean_up_tasks:
+                enqueue_many_retry_tasks(
+                    db_session=self.session,
+                    connection=self.redis,
+                    retry_tasks_ids=[task.retry_task_id for task in clean_up_tasks],
+                    use_task_type_exc_handler=False,
+                )
+                msg = "Started clean up jobs for selected tasks"
             try:
                 self.session.commit()
                 flash(msg)

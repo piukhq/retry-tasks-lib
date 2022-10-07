@@ -314,6 +314,12 @@ def retryable_task(
                         try:
                             cleanup_handler = resolve_callable_from_path(task_to_run.task_type.cleanup_handler_path)
                         except UnresolvableHandlerPath:
+                            task_to_run.update_task(
+                                db_session,
+                                status=RetryTaskStatuses.CLEANUP_FAILED,
+                                clear_next_attempt_time=True,
+                                increase_attempts=False,
+                            )
                             logger.error("Clean up path not resolved for task: %s", task_to_run.retry_task_id)
                         else:
                             cleanup_handler(task_to_run, db_session)

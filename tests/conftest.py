@@ -1,3 +1,5 @@
+import logging
+
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,6 +12,7 @@ from sqlalchemy_utils import create_database, database_exists, drop_database
 
 from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKey, TmpBase
 from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
+from retry_tasks_lib.utils.synchronous import clean_up_handler
 from tests.db import POSTGRES_DB, REDIS_URL, AsyncSessionMaker, SyncSessionMaker, sync_engine
 
 
@@ -155,16 +158,31 @@ async def retry_task_async(async_db_session: "Session", task_type_with_keys_asyn
     return task
 
 
+@clean_up_handler
+def mock_clean_up_hanlder_fn(retry_task: RetryTask, db_session: "Session") -> None:  # pylint: disable=unused-argument
+    assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    logging.info("Running mock clean up function")
+    assert retry_task.task_type.name == "task-type-with-cleanup"
+
+
+# pylint: disable=unused-argument
+@clean_up_handler
+def mock_clean_up_hanlder_fn_failure(retry_task: RetryTask, db_session: "Session") -> None:
+    assert retry_task.status == RetryTaskStatuses.IN_PROGRESS
+    logging.info("Running mock clean up failure function")
+    assert 1 == 2  # To make this function fail
+
+
 @pytest.fixture(scope="function")
 def task_type_with_keys_and_cleanup_handler_path(
     sync_db_session: "Session", task_type_keys: list[tuple[str, TaskParamsKeyTypes]]
 ) -> TaskType:
     task_type = TaskType(
-        name="task-type",
+        name="task-type-with-cleanup",
         path="path.to.func",
         queue_name="queue-name",
         error_handler_path="path.to.error_handler",
-        cleanup_handler_path="path.to.cleanup_hanlder_fn",
+        cleanup_handler_path="tests.conftest.mock_clean_up_hanlder_fn",
     )
     sync_db_session.add(task_type)
     sync_db_session.flush()
@@ -175,3 +193,19 @@ def task_type_with_keys_and_cleanup_handler_path(
     sync_db_session.add_all(task_type_keys_objs)
     sync_db_session.commit()
     return task_type
+
+
+@pytest.fixture(scope="function")
+def retry_task_sync_with_cleanup(
+    sync_db_session: "Session", task_type_with_keys_and_cleanup_handler_path: TaskType
+) -> RetryTask:
+    task = RetryTask(
+        task_type_id=task_type_with_keys_and_cleanup_handler_path.task_type_id,
+        status=RetryTaskStatuses.CLEANUP,
+        attempts=0,
+        audit_data=[],
+        next_attempt_time=None,
+    )
+    sync_db_session.add(task)
+    sync_db_session.commit()
+    return task
