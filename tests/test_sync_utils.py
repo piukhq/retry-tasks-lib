@@ -387,6 +387,7 @@ def test_cancel_task_with_clean_up_handling(
     A task in RETRYING, WAITING, CLEANUP and CLEANUP_FAILED state is cancellable
     """
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+    attempts_before_cancel = retry_task_sync_with_cleanup.attempts
 
     @retryable_task(db_session_factory=SyncSessionMaker)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
@@ -398,6 +399,8 @@ def test_cancel_task_with_clean_up_handling(
 
     mock_logger.info.assert_called_once_with("Running mock clean up function")
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CANCELLED
+    assert retry_task_sync_with_cleanup.attempts == attempts_before_cancel
+    assert retry_task_sync_with_cleanup.next_attempt_time is None
 
 
 @mock.patch("tests.conftest.logging")
@@ -409,6 +412,7 @@ def test_cancel_task_with_clean_up_hander_function_failure(
     sync_db_session.commit()
 
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+    attempts_before_cancel = retry_task_sync_with_cleanup.attempts
 
     @retryable_task(db_session_factory=SyncSessionMaker)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
@@ -420,6 +424,8 @@ def test_cancel_task_with_clean_up_hander_function_failure(
 
     mock_logger.info.assert_called_once_with("Running mock clean up failure function")
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP_FAILED
+    assert retry_task_sync_with_cleanup.attempts == attempts_before_cancel
+    assert retry_task_sync_with_cleanup.next_attempt_time is None
 
 
 @mock.patch("retry_tasks_lib.utils.synchronous.logger")
@@ -431,6 +437,7 @@ def test_cancel_task_with_bad_cleanup_hanlder_path(
     sync_db_session.commit()
 
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP
+    attempts_before_cancel = retry_task_sync_with_cleanup.attempts
 
     @retryable_task(db_session_factory=SyncSessionMaker)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
@@ -444,3 +451,5 @@ def test_cancel_task_with_bad_cleanup_hanlder_path(
         "Clean up path not resolved for task: %s", retry_task_sync_with_cleanup.retry_task_id
     )
     assert retry_task_sync_with_cleanup.status == RetryTaskStatuses.CLEANUP_FAILED
+    assert retry_task_sync_with_cleanup.attempts == attempts_before_cancel
+    assert retry_task_sync_with_cleanup.next_attempt_time is None
