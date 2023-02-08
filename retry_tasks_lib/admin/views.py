@@ -3,20 +3,20 @@ import json
 from collections import defaultdict
 
 from flask import Markup, flash, url_for
+from flask_admin import Admin
 from flask_admin.actions import action
 from flask_admin.contrib.sqla import ModelView
 from redis import Redis
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
-from retry_tasks_lib.db.models import RetryTask
+from retry_tasks_lib.db.models import RetryTask, TaskType, TaskTypeKey, TaskTypeKeyValue
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.synchronous import enqueue_many_retry_tasks, sync_create_many_tasks
 
 
 class RetryTaskAdminBase(ModelView):
 
-    endpoint_prefix = ""  # Set this in subclass for url/routing
     redis: Redis | None = None  # Set this in subclass
 
     form_create_rules = ("task_type",)
@@ -65,7 +65,7 @@ class RetryTaskAdminBase(ModelView):
                 [
                     '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(  # pylint: disable=consider-using-f-string
                         url_for(
-                            f"{view.endpoint_prefix}/task-type-key-values.details_view",
+                            "task-type-key-values.details_view",
                             id=f"{value.retry_task_id},{value.task_type_key_id}",
                         ),
                         value.task_type_key.name,
@@ -235,3 +235,72 @@ class TaskTypeKeyValueAdminBase(ModelView):
             "minimum_input_length": 0,
         },
     }
+
+
+def register_tasks_admin(
+    *,
+    admin: "Admin",
+    scoped_db_session: "Session",
+    redis: "Redis",
+    admin_base_classes: tuple = (),
+    url_prefix: str | None = None,
+    menu_title: str = "Tasks",
+) -> None:
+    redis_ = redis
+    base_class = type("TaskBase", admin_base_classes, {})
+
+    class TaskAdmin(RetryTaskAdminBase, base_class):  # type: ignore
+        redis = redis_
+
+    admin.add_view(
+        TaskAdmin(
+            RetryTask,
+            scoped_db_session,
+            "Tasks",
+            endpoint="retry-tasks",
+            url=f'{f"{url_prefix}/" if url_prefix else ""}tasks',
+            category=menu_title,
+        )
+    )
+
+    class TaskTypeAdmin(TaskTypeAdminBase, base_class):  # type: ignore
+        pass
+
+    admin.add_view(
+        TaskTypeAdmin(
+            TaskType,
+            scoped_db_session,
+            "Task Types",
+            endpoint="task-types",
+            url=f'{f"{url_prefix}/" if url_prefix else ""}task-types',
+            category=menu_title,
+        )
+    )
+
+    class TaskTypeKeyAdmin(TaskTypeKeyAdminBase, base_class):  # type: ignore
+        pass
+
+    admin.add_view(
+        TaskTypeKeyAdmin(
+            TaskTypeKey,
+            scoped_db_session,
+            "Task Type Keys",
+            endpoint="task-type-keys",
+            url=f'{f"{url_prefix}/" if url_prefix else ""}task-type-keys',
+            category=menu_title,
+        )
+    )
+
+    class TaskTypeKeyValueAdmin(TaskTypeKeyValueAdminBase, base_class):  # type: ignore
+        pass
+
+    admin.add_view(
+        TaskTypeKeyValueAdmin(
+            TaskTypeKeyValue,
+            scoped_db_session,
+            "Task Type Key Values",
+            endpoint="task-type-key-values",
+            url=f'{f"{url_prefix}/" if url_prefix else ""}task-type-key-values',
+            category=menu_title,
+        )
+    )
