@@ -22,7 +22,7 @@ python = "^3.10"
 rq = "^1.10.0"
 SQLAlchemy = "^1.4.25"
 requests = "^2.26.0"
-sentry-sdk = "^1.5.8"
+sentry-sdk = "^1.15.0"
 Flask-Admin = { version = "^1.5.8", optional = true }
 prometheus-client = {version = "^0.14.1", optional = true }
 
@@ -34,7 +34,7 @@ reporting = ["prometheus-client"]
 pylint-pytest = "^1.1.2"
 black = "^22.3.0"
 isort = "^5.9.3"
-mypy = "^0.940"
+mypy = "^1.0.0"
 xenon = "^0.8.0"
 types-requests = "^2.25.9"
 pytest = "^6.2.5"

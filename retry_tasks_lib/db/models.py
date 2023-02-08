@@ -1,7 +1,7 @@
 import json
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -15,6 +15,7 @@ from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
 
 if TYPE_CHECKING:
+
     from sqlalchemy.orm import Session
 
 TmpBase: Any = declarative_base()
@@ -49,7 +50,7 @@ class RetryTask(TmpBase, TimestampMixin):
     def get_task_type_key_values(self, values: list[tuple[int, str]]) -> list["TaskTypeKeyValue"]:
         task_type_key_values: list[TaskTypeKeyValue] = []
         for key_id, value in values:
-            serialization_fn = json.dumps if isinstance(value, (dict, list)) else str
+            serialization_fn: Callable[..., str] = getattr(json, "dumps") if isinstance(value, (dict, list)) else str
             val = serialization_fn(value)
             task_type_key_values.append(
                 TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=val)
@@ -68,9 +69,9 @@ class RetryTask(TmpBase, TimestampMixin):
         self,
         db_session: "Session",
         *,
-        response_audit: dict = None,
-        status: RetryTaskStatuses = None,
-        next_attempt_time: datetime = None,
+        response_audit: dict | None = None,
+        status: RetryTaskStatuses | None = None,
+        next_attempt_time: datetime | None = None,
         increase_attempts: bool = False,
         clear_next_attempt_time: bool = False,
     ) -> None:

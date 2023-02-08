@@ -238,11 +238,9 @@ def retryable_task(
     """
     requeue_delay_range = requeue_delay_range or {"min": 5, "max": 20}
     parent_span = Hub.current.scope.span
-    trace: Callable
-    if parent_span is None:
-        trace = start_span
-    else:
-        trace = parent_span.start_child
+    trace: Callable[..., Span] = (
+        start_span if parent_span is None else parent_span.start_child  # type: ignore [assignment]
+    )
 
     with trace(op="check-exclusive-constraints"):
         if exclusive_constraints:
@@ -409,9 +407,7 @@ def enqueue_retry_task(
 ) -> rq.job.Job:
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
 
-    job_metadata = (
-        {} if not use_task_type_exc_handler else {"error_handler_path": retry_task.task_type.error_handler_path}
-    )
+    job_metadata = {"error_handler_path": retry_task.task_type.error_handler_path} if use_task_type_exc_handler else {}
     function_path = retry_task.task_type.cleanup_handler_path if use_clean_hanlder_path else retry_task.task_type.path
     job = q.enqueue(
         function_path,
@@ -502,9 +498,7 @@ def enqueue_many_retry_tasks(
                 rq.Queue.prepare_data(
                     function_path,
                     kwargs={"retry_task_id": task.retry_task_id},
-                    meta={}
-                    if not use_task_type_exc_handler
-                    else {"error_handler_path": task.task_type.error_handler_path},
+                    meta={"error_handler_path": task.task_type.error_handler_path} if use_task_type_exc_handler else {},
                     failure_ttl=failure_ttl,
                     at_front=at_front,
                 )
@@ -540,7 +534,7 @@ def cleanup_handler(db_session_factory: sessionmaker) -> Callable:
                     logger.debug("Calling the clean up handler function for task")
                     try:
                         clean_fn(retry_task_to_clean, db_session)
-                    except:  # pylint: disable=bare-except
+                    except Exception:  # pylint: disable=broad-except
                         logger.exception(
                             "Failed to run clean up handler function for task: %s", retry_task_to_clean.retry_task_id
                         )
