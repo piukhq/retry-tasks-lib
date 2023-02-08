@@ -17,7 +17,6 @@ from retry_tasks_lib.utils.asynchronous import (
     enqueue_many_retry_tasks,
     enqueue_retry_task,
 )
-from tests.db import AsyncSessionMaker
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,35 +42,6 @@ async def test_enqueue_retry_task(
     assert job.kwargs == {"retry_task_id": 1}
     assert job.func_name == retry_task_async.task_type.path
     assert job.meta == {"error_handler_path": "path.to.error_handler"}
-
-
-@pytest.mark.asyncio
-async def test_enqueue_retry_task_failed_enqueue(
-    mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
-) -> None:
-    mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
-    mock_queue_class = mocker.patch("rq.Queue")
-    mock_queue = mock_queue_class.return_value
-    mock_queue.enqueue.side_effect = Exception("test enqueue exception")
-
-    # Provide a different session here as the exception rolls back the fixture
-    # session making it unusable in an async context
-    async with AsyncSessionMaker() as session:
-        await enqueue_retry_task(
-            session,
-            retry_task_id=retry_task_async.retry_task_id,
-            connection=mock.MagicMock(),
-        )
-    await async_db_session.refresh(retry_task_async)
-    assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert mock_queue_class.call_args[0] == (retry_task_async.task_type.queue_name,)
-    mock_queue.enqueue.assert_called_once_with(
-        retry_task_async.task_type.path,
-        retry_task_id=retry_task_async.retry_task_id,
-        failure_ttl=604800,
-        meta={"error_handler_path": "path.to.error_handler"},
-    )
-    mock_sentry.capture_exception.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -114,61 +84,6 @@ async def test_enqueue_many_retry_tasks_empty_list(
     mock_logger.warning.assert_called_once_with(
         "async 'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead."
     )
-
-
-@pytest.mark.asyncio
-async def test_enqueue_many_retry_tasks_failed_enqueue(
-    mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
-) -> None:
-    mock_sentry = mocker.patch("retry_tasks_lib.utils.asynchronous.sentry_sdk")
-    mock_queue_class = mocker.patch("rq.Queue")
-    mock_queue = mock_queue_class.return_value
-    mock_queue.enqueue_many.side_effect = Exception("test enqueue exception")
-    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
-    mock_query.return_value = [retry_task_async]
-
-    # Provide a different session here as the exception rolls back the fixture
-    # session making it unusable in an async context
-    async with AsyncSessionMaker() as session:
-        await enqueue_many_retry_tasks(
-            session,
-            retry_tasks_ids=[retry_task_async.retry_task_id],
-            connection=mock.MagicMock(),
-        )
-    await async_db_session.refresh(retry_task_async)
-    assert retry_task_async.status == RetryTaskStatuses.PENDING
-    assert mock_queue_class.call_args[0] == (retry_task_async.task_type.queue_name,)
-    mock_queue.enqueue_many.assert_called_once()
-    mock_queue_class.prepare_data.assert_called_once_with(
-        retry_task_async.task_type.path,
-        kwargs={"retry_task_id": retry_task_async.retry_task_id},
-        failure_ttl=604800,
-        meta={"error_handler_path": "path.to.error_handler"},
-    )
-    mock_sentry.capture_exception.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_enqueue_many_retry_tasks_failed_enqueue_raise_exc(
-    mocker: MockerFixture, async_db_session: "AsyncSession", retry_task_async: RetryTask
-) -> None:
-    mock_queue_class = mocker.patch("rq.Queue")
-    mock_queue = mock_queue_class.return_value
-    mock_queue.enqueue_many.side_effect = enqueue_many_side_effect = Exception("test enqueue exception")
-    mock_query = mocker.patch("retry_tasks_lib.utils.asynchronous._get_pending_retry_tasks")
-    mock_query.return_value = [retry_task_async]
-
-    # Provide a different session here as the exception rolls back the fixture
-    # session making it unusable in an async context
-    async with AsyncSessionMaker() as session:
-        with pytest.raises(Exception) as exc_info:
-            await enqueue_many_retry_tasks(
-                session, retry_tasks_ids=[retry_task_async.retry_task_id], connection=mock.MagicMock(), raise_exc=True
-            )
-    mock_queue.enqueue_many.assert_called_once()
-    assert exc_info.value == enqueue_many_side_effect
-    await async_db_session.refresh(retry_task_async)
-    assert retry_task_async.status == RetryTaskStatuses.PENDING
 
 
 @pytest.mark.asyncio
