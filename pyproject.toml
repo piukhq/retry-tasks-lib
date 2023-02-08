@@ -88,7 +88,6 @@ disable = [
     "duplicate-code", # a lot of logic will be similar between sync and async methods but this is expected
 ]
 good-names=["k", "v", "i", "q", "fn", "ex"]
-exclude=["tests"]
 
 [tool.poetry-dynamic-versioning]
 enable = true
