@@ -65,7 +65,7 @@ class RetryTaskAdminBase(ModelView):
                 [
                     '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(  # pylint: disable=consider-using-f-string
                         url_for(
-                            "task-type-key-values.details_view",
+                            f"{view.endpoint_prefix or ''}task-type-key-values.details_view",
                             id=f"{value.retry_task_id},{value.task_type_key_id}",
                         ),
                         value.task_type_key.name,
@@ -244,10 +244,11 @@ def register_tasks_admin(
     redis: "Redis",
     admin_base_classes: tuple = (),
     url_prefix: str | None = None,
+    endpoint_prefix: str | None = None,
     menu_title: str = "Tasks",
 ) -> None:
     redis_ = redis
-    base_class = type("TaskBase", admin_base_classes, {})
+    base_class = type("TaskBase", admin_base_classes, {"endpoint_prefix": endpoint_prefix})
 
     class TaskAdmin(RetryTaskAdminBase, base_class):  # type: ignore
         redis = redis_
@@ -257,7 +258,7 @@ def register_tasks_admin(
             RetryTask,
             scoped_db_session,
             "Tasks",
-            endpoint="retry-tasks",
+            endpoint=f"{endpoint_prefix or ''}retry-tasks",
             url=f'{f"{url_prefix}/" if url_prefix else ""}tasks',
             category=menu_title,
         )
@@ -271,7 +272,7 @@ def register_tasks_admin(
             TaskType,
             scoped_db_session,
             "Task Types",
-            endpoint="task-types",
+            endpoint=f"{endpoint_prefix or ''}task-types",
             url=f'{f"{url_prefix}/" if url_prefix else ""}task-types',
             category=menu_title,
         )
@@ -285,7 +286,7 @@ def register_tasks_admin(
             TaskTypeKey,
             scoped_db_session,
             "Task Type Keys",
-            endpoint="task-type-keys",
+            endpoint=f"{endpoint_prefix or ''}task-type-keys",
             url=f'{f"{url_prefix}/" if url_prefix else ""}task-type-keys',
             category=menu_title,
         )
@@ -299,7 +300,7 @@ def register_tasks_admin(
             TaskTypeKeyValue,
             scoped_db_session,
             "Task Type Key Values",
-            endpoint="task-type-key-values",
+            endpoint=f"{endpoint_prefix or ''}task-type-key-values",
             url=f'{f"{url_prefix}/" if url_prefix else ""}task-type-key-values',
             category=menu_title,
         )
