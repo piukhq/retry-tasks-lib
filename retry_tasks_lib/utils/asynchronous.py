@@ -8,12 +8,24 @@ import rq
 from rq.queue import EnqueueData
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import noload, selectinload
+from sqlalchemy.orm import joinedload, noload, selectinload
 
 from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
+
+
+async def _get_task_type(db_session: AsyncSession, *, task_type_name: str) -> TaskType:
+    return (
+        (
+            await db_session.execute(
+                select(TaskType).options(joinedload(TaskType.task_type_keys)).where(TaskType.name == task_type_name)
+            )
+        )
+        .unique()
+        .scalar_one()
+    )
 
 
 async def async_create_task(db_session: AsyncSession, *, task_type_name: str, params: dict) -> RetryTask:
@@ -23,9 +35,7 @@ async def async_create_task(db_session: AsyncSession, *, task_type_name: str, pa
     style database wrapper function. It is up to the caller to commit() the
     transaction/session once the object has been returned.
     """
-    task_type: TaskType = (
-        (await db_session.execute(select(TaskType).where(TaskType.name == task_type_name))).unique().scalar_one()
-    )
+    task_type = await _get_task_type(db_session, task_type_name=task_type_name)
     retry_task = RetryTask(task_type_id=task_type.task_type_id)
     db_session.add(retry_task)
     await db_session.flush()
@@ -35,6 +45,29 @@ async def async_create_task(db_session: AsyncSession, *, task_type_name: str, pa
     )
     await db_session.flush()
     return retry_task
+
+
+async def async_create_many_tasks(
+    db_session: AsyncSession, *, task_type_name: str, params_list: list[dict]
+) -> list[RetryTask]:
+    """Create many uncommited RetryTask objects
+
+    The function is intended to be called in the context of a sync_run_query
+    style database wrapper function. It is up to the caller to commit() the
+    transaction/session once the objects have been returned.
+    """
+    task_type = await _get_task_type(db_session, task_type_name=task_type_name)
+    keys = task_type.get_key_ids_by_name()
+    retry_tasks = [RetryTask(task_type_id=task_type.task_type_id) for _ in params_list]
+    db_session.add_all(retry_tasks)
+    await db_session.flush()
+
+    for retry_task, params in zip(retry_tasks, params_list):
+        values = [(keys[k], v) for k, v in params.items()]
+        db_session.add_all(retry_task.get_task_type_key_values(values))
+
+    await db_session.flush()
+    return retry_tasks
 
 
 async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
