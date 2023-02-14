@@ -13,6 +13,7 @@ from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.asynchronous import (
     _get_pending_retry_task,
     _get_pending_retry_tasks,
+    async_create_many_tasks,
     async_create_task,
     enqueue_many_retry_tasks,
     enqueue_retry_task,
@@ -124,3 +125,23 @@ async def test_async_create_task(async_db_session: "AsyncSession", task_type_wit
     await async_db_session.commit()
     await async_db_session.refresh(retry_task)
     assert retry_task.get_params() == params
+
+
+@pytest.mark.asyncio
+async def test_async_create_many_tasks(async_db_session: "AsyncSession", task_type_with_keys_async: TaskType) -> None:
+    params_list = [
+        {"task-type-key-str": "astring1", "task-type-key-int": 42, "task-type-key-json": ["list", "of", "ones"]},
+        {"task-type-key-str": "astring2", "task-type-key-int": 43, "task-type-key-json": ["list", "of", "twos"]},
+    ]
+    retry_tasks = await async_create_many_tasks(
+        db_session=async_db_session,
+        task_type_name="task-type",
+        params_list=params_list,
+    )
+    await async_db_session.commit()
+    expected_params = []
+    for retry_task in retry_tasks:
+        await async_db_session.refresh(retry_task)
+        expected_params.append(retry_task.get_params())
+
+    assert expected_params == params_list
