@@ -17,7 +17,7 @@ from retry_tasks_lib.utils.synchronous import enqueue_many_retry_tasks, sync_cre
 
 class RetryTaskAdminBase(ModelView):
 
-    redis: Redis | None = None  # Set this in subclass
+    redis: Redis
 
     form_create_rules = ("task_type",)
     form_edit_rules = ("attempts",)
@@ -59,11 +59,11 @@ class RetryTaskAdminBase(ModelView):
         }
     }
     column_formatters = {
-        "params": lambda view, c, model, n: Markup("<p>%s</p>")
+        "params": lambda view, _c, model, _n: Markup("<p>%s</p>")
         % Markup(
             "".join(
                 [
-                    '<strong><a href="{0}">{1}</a></strong>: {2}</br>'.format(  # pylint: disable=consider-using-f-string
+                    '<strong><a href="{}">{}</a></strong>: {}</br>'.format(  # pylint: disable=consider-using-f-string
                         url_for(
                             f"{view.endpoint_prefix or ''}task-type-key-values.details_view",
                             id=f"{value.retry_task_id},{value.task_type_key_id}",
@@ -75,7 +75,7 @@ class RetryTaskAdminBase(ModelView):
                 ]
             )
         ),
-        "audit_data": lambda v, c, model, n: Markup("<pre>%s</pre>")
+        "audit_data": lambda _v, _c, model, _n: Markup("<pre>%s</pre>")
         % json.dumps(model.audit_data, indent=4, sort_keys=True),
     }
 
@@ -118,7 +118,7 @@ class RetryTaskAdminBase(ModelView):
             return
 
         for task in tasks:
-            task.status = "REQUEUED"
+            task.status = RetryTaskStatuses.REQUEUED
 
         try:
             new_tasks = self.clone_tasks(tasks)
@@ -132,7 +132,7 @@ class RetryTaskAdminBase(ModelView):
                 connection=self.redis,
                 at_front=True,  # Ensure that requeued tasks get run first
             )
-        except Exception as ex:  # pylint: disable=broad-except
+        except Exception as ex:  # noqa: BLE001
             self.session.rollback()
             if not self.handle_view_exception(ex):
                 raise
@@ -191,7 +191,7 @@ class RetryTaskAdminBase(ModelView):
             try:
                 self.session.commit()
                 flash(msg)
-            except Exception as ex:  # pylint: disable=broad-except
+            except Exception as ex:  # noqa: BLE001
                 self.session.rollback()
                 if not self.handle_view_exception(ex):
                     raise

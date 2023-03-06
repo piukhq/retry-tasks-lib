@@ -1,7 +1,8 @@
 import asyncio
 
 from collections import defaultdict
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import rq
 
@@ -14,6 +15,9 @@ from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.db.retry_query import async_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
+
+if TYPE_CHECKING:
+    from redis import Redis
 
 
 async def _get_task_type(db_session: AsyncSession, *, task_type_name: str) -> TaskType:
@@ -62,7 +66,7 @@ async def async_create_many_tasks(
     db_session.add_all(retry_tasks)
     await db_session.flush()
 
-    for retry_task, params in zip(retry_tasks, params_list):
+    for retry_task, params in zip(retry_tasks, params_list, strict=True):
         values = [(keys[k], v) for k, v in params.items()]
         db_session.add_all(retry_task.get_task_type_key_values(values))
 
@@ -84,7 +88,7 @@ async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) 
     ).scalar_one()
 
 
-async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> list[RetryTask]:
+async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> Sequence[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -114,7 +118,7 @@ async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: li
     return retry_tasks
 
 
-async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, connection: Any) -> None:
+async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, connection: "Redis") -> None:
     retry_task = await async_run_query(
         _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
@@ -134,7 +138,9 @@ async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, co
         logger.exception("Failed to enqueue task (retry_task_id=%d)", retry_task_id)
 
 
-async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: Any) -> None:
+async def enqueue_many_retry_tasks(
+    db_session: AsyncSession, *, retry_tasks_ids: list[int], connection: "Redis"
+) -> None:
     if not retry_tasks_ids:
         logger.warning(
             "async 'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead."
@@ -154,16 +160,15 @@ async def enqueue_many_retry_tasks(db_session: AsyncSession, *, retry_tasks_ids:
         queued_jobs: list[rq.job.Job] = []
         for queue_name, tasks in tasks_by_queue.items():
             q = rq.Queue(queue_name, connection=connection)
-            prepared: list[EnqueueData] = []
-            for task in tasks:
-                prepared.append(
-                    rq.Queue.prepare_data(
-                        task.task_type.path,
-                        kwargs={"retry_task_id": task.retry_task_id},
-                        meta={"error_handler_path": task.task_type.error_handler_path},
-                        failure_ttl=60 * 60 * 24 * 7,  # 1 week
-                    )
+            prepared: list[EnqueueData] = [
+                rq.Queue.prepare_data(
+                    task.task_type.path,
+                    kwargs={"retry_task_id": task.retry_task_id},
+                    meta={"error_handler_path": task.task_type.error_handler_path},
+                    failure_ttl=60 * 60 * 24 * 7,  # 1 week
                 )
+                for task in tasks
+            ]
 
             jobs = q.enqueue_many(prepared, pipeline=pipeline)
             queued_jobs.extend(jobs)

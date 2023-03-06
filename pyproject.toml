@@ -11,16 +11,16 @@ classifiers = [
     'Intended Audience :: Developers',
     'Natural Language :: English',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
 ]
 packages = [
     { include = "retry_tasks_lib" },
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 rq = "^1.10.0"
-SQLAlchemy = "^1.4.25"
+SQLAlchemy = "^2.0.0"
 requests = "^2.26.0"
 sentry-sdk = "^1.15.0"
 Flask-Admin = { version = "^1.5.8", optional = true }
@@ -31,7 +31,6 @@ admin = ["Flask-Admin"]
 reporting = ["prometheus-client"]
 
 [tool.poetry.group.dev.dependencies]
-pylint-pytest = "^1.1.2"
 black = "^22.3.0"
 isort = "^5.9.3"
 mypy = "^1.0.0"
@@ -43,10 +42,10 @@ pytest-asyncio = "^0.15.1"
 pytest-mock = "^3.6.1"
 ipython = "^7.28.0"
 python-dotenv = "^0.19.1"
-SQLAlchemy-Utils = "^0.37.8"
-asyncpg = "^0.24.0"
-psycopg2-binary = "^2.9.1"
 types-redis = "^3.5.15"
+psycopg = "^3.1.8"
+ruff = "^0.0.254"
+refurb = "^1.13.0"
 
 [tool.black]
 line-length = 120
@@ -67,9 +66,6 @@ disallow_untyped_defs = true
 show_error_codes = true
 warn_unused_ignores = true
 ignore_missing_imports = true
-plugins = [
-    "sqlalchemy.ext.mypy.plugin",
-]
 
 [tool.pylint.MASTER]
 load-plugins=[
@@ -97,3 +93,58 @@ pattern = '^((?P<epoch>\d+)!)?(?P<base>\d+(\.\d+)*)'
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
 build-backend = "poetry_dynamic_versioning.backend"
+
+[tool.ruff]
+line-length = 120
+show-source = true
+target-version = "py311"
+select = [
+    "F",    # Pyflakes (F)
+    "E", 
+    "W",    # pycodestyle (E, W)
+    "C90",  # mccabe (C90)
+    # isort (I)
+    # pydocstyle (D)
+    "UP",   # pyupgrade (UP)
+    "N",    # pep8-naming (N)
+    "YTT",  # flake8-2020 (YTT)
+    "ANN",  # flake8-annotations (ANN)
+    "S",    # flake8-bandit (S)
+    "BLE",  # flake8-blind-except (BLE)
+    # flake8-boolean-trap (FBT)
+    "B",    # flake8-bugbear (B)
+    "A",    # flake8-builtins (A)
+    "C4",   # flake8-comprehensions (C4)
+    "T10",  # flake8-debugger (T10)
+    # flake8-errmsg (EM)
+    "ICN",  # flake8-import-conventions (ICN)
+    "T20",  # flake8-print (T20)
+    # "PT",   # flake8-pytest-style (PT)
+    "Q",    # flake8-quotes (Q)
+    # flake8-return (RET)
+    "SIM",  # flake8-simplify (SIM)
+    "TID",  # flake8-tidy-imports (TID)
+    "ARG",  # flake8-unused-arguments (ARG)
+    "DTZ",  # flake8-datetimez (DTZ)
+    # "ERA",  # eradicate (ERA) until we can remove commented out code this has to stay deactivated
+    # pandas-vet (PD)
+    # pygrep-hooks (PGH)
+    "PLC",
+    "PLE",
+    "PLR",
+    "PLW",  # Pylint (PLC, PLE, PLR, PLW)
+    "RUF",  # Ruff-specific rules (RUF)
+]
+ignore = [
+    "ANN101",
+    "ANN102",
+    # disables function call in function parameter error
+    # arg = Depends(..) and arg = typer.Option(..) would be flagged
+    "B008",
+    "PLR2004" # disable Magic value used in comparison
+]
+
+[tool.ruff.per-file-ignores]
+# disable unused import error for __init__.py and cosmos/db/base.py
+"__init__.py" = ["F401"]
+"tests/*" = ["S101", "PLR2004", "ARG001", "PLR0913", "PLR0915", "ARG002"]

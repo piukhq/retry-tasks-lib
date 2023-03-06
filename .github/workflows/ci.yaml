@@ -13,7 +13,7 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     env:
-      SQLALCHEMY_DATABASE_URI: "postgresql+asyncpg://postgres@127.0.0.1:5432/retry_tasks_lib_test"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg://postgres@127.0.0.1:5432/retry_tasks_lib_test"
       REDIS_URL: redis://127.0.0.1:6379/0
     services:
       postgres:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v2
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - run: pip install poetry
       - run: poetry config virtualenvs.create false
       - run: poetry install -E admin -E reporting
@@ -39,7 +39,8 @@ jobs:
       - run: black --check .
       - run: isort --check .
       - run: mypy .
-      - run: pylint retry_tasks_lib tests
+      - run: ruff retry_tasks_lib tests
+      - run: refurb retry_tasks_lib tests
       - run: pytest tests --verbose --cov=retry_tasks_lib --cov-report=xml --junitxml=report.xml
   create_tag_release:
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -57,7 +58,7 @@ jobs:
           fi
       - uses: actions/setup-python@v2
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - run: pip install poetry poetry-dynamic-versioning
       - run: poetry config repositories.pypicloud https://pypi.tools.uksouth.bink.sh/simple
       - run: poetry config http-basic.pypicloud c02bed7a-4224-4fb4-82ad-17499e4d0e4a ${{ secrets.PYPICLOUD_PASSWORD }}

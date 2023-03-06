@@ -1,7 +1,6 @@
 import logging
 
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import sentry_sdk
@@ -45,7 +44,7 @@ def report_anomalous_tasks(*, session_maker: sessionmaker, project_name: str, ga
                     RetryTaskStatuses.WAITING.name: 0,
                 }
 
-            now = datetime.now(tz=timezone.utc)
+            now = datetime.now(tz=UTC)
             res = (
                 db_session.execute(
                     select(
@@ -86,7 +85,7 @@ def report_anomalous_tasks(*, session_maker: sessionmaker, project_name: str, ga
             for status, count in values.items():
                 gauge.labels(app=project_name, task_name=task_name, status=status).set(count)
 
-    except Exception as ex:  # pylint: disable=broad-except
+    except Exception as ex:  # noqa: BLE001
         sentry_sdk.capture_exception(ex)
 
 
@@ -127,7 +126,7 @@ def report_tasks_summary(*, session_maker: sessionmaker, project_name: str, gaug
             for status, count in values.items():
                 gauge.labels(app=project_name, task_name=task_name, status=status).set(count)
 
-    except Exception as ex:  # pylint: disable=broad-except
+    except Exception as ex:  # noqa: BLE001
         sentry_sdk.capture_exception(ex)
 
 
@@ -147,5 +146,5 @@ def report_queue_lengths(*, redis: "Redis", project_name: str, gauge: "Gauge", q
         for queue_name in queue_names:
             queue = Queue(queue_name, connection=redis)
             gauge.labels(app=project_name, queue_name=queue_name).set(len(queue))
-    except Exception as ex:  # pylint: disable=broad-except
+    except Exception as ex:  # noqa: BLE001
         sentry_sdk.capture_exception(ex)

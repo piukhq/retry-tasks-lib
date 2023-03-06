@@ -1,6 +1,7 @@
 import logging
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import sentry_sdk
 
@@ -21,8 +22,8 @@ def sync_run_query(
     *,
     attempts: int = DB_CONNECTION_RETRY_TIMES,
     rollback_on_exc: bool = True,
-    **kwargs: Any,
-) -> Any:  # pragma: no cover
+    **kwargs: Any,  # noqa: ANN401
+) -> Any:  # noqa: ANN401
 
     while attempts > 0:
         attempts -= 1
@@ -34,9 +35,9 @@ def sync_run_query(
                 db_session.rollback()
 
             if attempts > 0 and ex.connection_invalidated:
-                logger.warning(f"Interrupted transaction: {repr(ex)}, attempts remaining:{attempts}")
+                logger.warning(f"Interrupted transaction: {ex!r}, attempts remaining:{attempts}")
             else:
-                sentry_sdk.capture_message(f"Max db connection attempts reached: {repr(ex)}")
+                sentry_sdk.capture_message(f"Max db connection attempts reached: {ex!r}")
                 raise
 
 
@@ -46,8 +47,8 @@ async def async_run_query(
     *,
     attempts: int = DB_CONNECTION_RETRY_TIMES,
     rollback_on_exc: bool = True,
-    **kwargs: Any,
-) -> Any:  # pragma: no cover
+    **kwargs: Any,  # noqa: ANN401,
+) -> Any:  #   # noqa: ANN401
     while attempts > 0:
         attempts -= 1
         try:
@@ -58,7 +59,7 @@ async def async_run_query(
                 await db_session.rollback()
 
             if attempts > 0 and ex.connection_invalidated:
-                logger.warning(f"Interrupted transaction: {repr(ex)}, attempts remaining:{attempts}")
+                logger.warning(f"Interrupted transaction: {ex!r}, attempts remaining:{attempts}")
             else:
-                sentry_sdk.capture_message(f"Max db connection attempts reached: {repr(ex)}")
+                sentry_sdk.capture_message(f"Max db connection attempts reached: {ex!r}")
                 raise

@@ -2,7 +2,6 @@ import enum
 import json
 
 from datetime import date, datetime
-from typing import Any
 
 
 class RetryTaskStatuses(enum.Enum):
@@ -22,7 +21,7 @@ class RetryTaskStatuses(enum.Enum):
         return [
             task_status.name
             for task_status in cls
-            if task_status not in [cls.SUCCESS, cls.CANCELLED, cls.REQUEUED, cls.IN_PROGRESS]
+            if task_status not in (cls.SUCCESS, cls.CANCELLED, cls.REQUEUED, cls.IN_PROGRESS)
         ]
 
     @classmethod
@@ -39,16 +38,16 @@ class TaskParamsKeyTypes(enum.Enum):
     DATETIME = enum.auto()
     JSON = enum.auto()
 
-    def convert_value(self, v: str) -> Any:  # pylint: disable=too-many-return-statements
+    def convert_value(self, v: str) -> str | int | float | bool | date | datetime | bytes | bytearray:  # noqa: PLR0911
         match self:
             case TaskParamsKeyTypes.STRING:
-                return str(v)
+                return v
             case TaskParamsKeyTypes.INTEGER:
                 return int(v)
             case TaskParamsKeyTypes.FLOAT:
                 return float(v)
             case TaskParamsKeyTypes.BOOLEAN:
-                return v.lower() in ["true", "1", "t", "yes", "y"]
+                return v.lower() in {"true", "1", "t", "yes", "y"}
             case TaskParamsKeyTypes.DATE:
                 return date.fromisoformat(v)
             case TaskParamsKeyTypes.DATETIME:

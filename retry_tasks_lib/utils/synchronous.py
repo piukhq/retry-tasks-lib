@@ -1,11 +1,12 @@
 import time
 
 from collections import defaultdict
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from random import randint
-from typing import Any, Callable, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import rq
 
@@ -23,13 +24,13 @@ from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.settings import DEFAULT_FAILURE_TTL, USE_NULL_POOL
 
-DelayRangeType = TypedDict(
-    "DelayRangeType",
-    {
-        "min": int,
-        "max": int,
-    },
-)
+if TYPE_CHECKING:
+    from redis import Redis
+
+
+class DelayRangeType(TypedDict):
+    minimum: int
+    maximum: int
 
 
 class IncorrectRetryTaskStatusError(Exception):
@@ -61,7 +62,7 @@ def _get_additional_task_ids(
     retry_task_id: int,
     additional_query_datas: list[RetryTaskAdditionalQueryData],
     sentry_span: Span,
-) -> list[int]:
+) -> Sequence[int]:
     with sentry_span.start_child(op="build-additional-filters"):
 
         # Note that this object is not FOR UPDATE locked as it is merely used for its related data
@@ -84,8 +85,8 @@ def _get_additional_task_ids(
             statuses.update({RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS})
 
             def _fetch_task_ids(
-                db_session: "Session", query_data: RetryTaskAdditionalQueryData, statuses: RetryTaskStatuses
-            ) -> list[int]:
+                db_session: "Session", query_data: RetryTaskAdditionalQueryData, statuses: Sequence[RetryTaskStatuses]
+            ) -> Sequence[int]:
                 key_expressions = [
                     or_(
                         *[
@@ -137,7 +138,7 @@ def _route_task_execution(
     *,
     retry_task_id: int,
     retry_tasks: list[RetryTask],
-    redis_connection: Any,
+    redis_connection: "Redis",
     requeue_delay_range: DelayRangeType,
     sentry_span: Span,
 ) -> tuple[bool, RetryTask]:
@@ -177,7 +178,7 @@ def _route_task_execution(
             next_attempt_time = enqueue_retry_task_delay(
                 connection=redis_connection,
                 retry_task=this_task,
-                delay_seconds=randint(requeue_delay_range["min"], requeue_delay_range["max"]),
+                delay_seconds=randint(requeue_delay_range["minimum"], requeue_delay_range["maximum"]),
             )
             this_task.update_task(db_session, increase_attempts=False, next_attempt_time=next_attempt_time)
         else:
@@ -195,8 +196,8 @@ def _route_task_execution(
 def retryable_task(
     *,
     db_session_factory: sessionmaker,
+    redis_connection: "Redis",
     exclusive_constraints: list[RetryTaskAdditionalQueryData] | None = None,
-    redis_connection: Any = None,
     requeue_delay_range: DelayRangeType | None = None,
     metrics_callback_fn: Callable[[float, str], None] | None = None,
 ) -> Callable:
@@ -236,7 +237,7 @@ def retryable_task(
         a tuple of two integers defining an interval between which a task that has been
         blocked from running should be requeued (jitter).
     """
-    requeue_delay_range = requeue_delay_range or {"min": 5, "max": 20}
+    requeue_delay_range = requeue_delay_range or {"minimum": 5, "maximum": 20}
     parent_span = Hub.current.scope.span
     trace: Callable[..., Span] = (
         start_span if parent_span is None else parent_span.start_child  # type: ignore [assignment]
@@ -305,7 +306,7 @@ def retryable_task(
                             if metrics_callback_fn:
                                 try:
                                     metrics_callback_fn(end - start, task_to_run.task_type.name)
-                                except Exception:  # pylint: disable=broad-except
+                                except Exception:  # noqa: BLE001
                                     logger.error("Failed to call metrics callback fn")
 
         return wrapper
@@ -353,7 +354,7 @@ def sync_create_many_tasks(
     db_session.add_all(retry_tasks)
     db_session.flush()
 
-    for retry_task, params in zip(retry_tasks, params_list):
+    for retry_task, params in zip(retry_tasks, params_list, strict=True):
         values = [(keys[k], v) for k, v in params.items()]
         db_session.bulk_save_objects(retry_task.get_task_type_key_values(values))
 
@@ -369,7 +370,7 @@ def get_retry_task(db_session: Session, retry_task_id: int) -> RetryTask:
     retry_task: RetryTask = sync_run_query(
         _get_retry_task_query, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
-    if retry_task.status not in ([RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING]):
+    if retry_task.status not in (RetryTaskStatuses.PENDING, RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING):
         raise ValueError(f"Incorrect state: {retry_task.status}")
 
     return retry_task
@@ -377,13 +378,13 @@ def get_retry_task(db_session: Session, retry_task_id: int) -> RetryTask:
 
 def enqueue_retry_task_delay(
     *,
-    connection: Any,
+    connection: "Redis",
     retry_task: RetryTask,
     delay_seconds: float,
     failure_ttl: int = DEFAULT_FAILURE_TTL,
 ) -> datetime:
     q = rq.Queue(retry_task.task_type.queue_name, connection=connection)
-    next_attempt_time = datetime.now(tz=timezone.utc) + timedelta(seconds=delay_seconds)
+    next_attempt_time = datetime.now(tz=UTC) + timedelta(seconds=delay_seconds)
     job = q.enqueue_at(  # requires rq worker --with-scheduler
         next_attempt_time,
         retry_task.task_type.path,
@@ -398,7 +399,7 @@ def enqueue_retry_task_delay(
 
 def enqueue_retry_task(
     *,
-    connection: Any,
+    connection: "Redis",
     retry_task: RetryTask,
     failure_ttl: int = DEFAULT_FAILURE_TTL,
     at_front: bool = False,
@@ -421,7 +422,7 @@ def enqueue_retry_task(
     return job
 
 
-def _get_enqueuable_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> list[RetryTask]:
+def _get_enqueuable_retry_tasks(db_session: Session, retry_tasks_ids: list[int]) -> Sequence[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -461,7 +462,7 @@ def enqueue_many_retry_tasks(
     db_session: Session,
     *,
     retry_tasks_ids: list[int],
-    connection: Any,
+    connection: "Redis",
     failure_ttl: int = DEFAULT_FAILURE_TTL,
     at_front: bool = False,
     use_cleanup_hanlder_path: bool = False,
