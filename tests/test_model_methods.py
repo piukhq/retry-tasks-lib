@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from retry_tasks_lib.utils.synchronous import sync_create_task
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 def test_get_params(sync_db_session: "Session", task_type_with_keys_sync: "TaskType") -> None:
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     input_params = {
         "task-type-key-str": "I am a string",
         "task-type-key-int": 1234,

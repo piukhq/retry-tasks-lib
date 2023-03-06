@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Generator
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
@@ -12,7 +13,7 @@ from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.error_handler import handle_request_exception, job_meta_handler
 
-now = datetime.now(tz=timezone.utc)
+now = datetime.now(tz=UTC)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

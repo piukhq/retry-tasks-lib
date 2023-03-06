@@ -42,7 +42,7 @@ def test_retry_task_admin_requeue_action(
             task_type_name=task_type_with_keys_sync.name,
             params={"lookup-val": lookup_val, "task-type-key-int": 42},
         )
-        retry_task.status = status
+        retry_task.status = RetryTaskStatuses[status]
         sync_db_session.commit()
         expected_tasks_count += 1
 
@@ -112,7 +112,7 @@ def test_retry_task_admin_requeue_action_at_front(
         task_type_name=task_type_with_keys_sync.name,
         params={"task-type-key-str": "a-string", "task-type-key-int": 42},
     )
-    retry_task.status = "FAILED"
+    retry_task.status = RetryTaskStatuses.FAILED
     sync_db_session.commit()
 
     assert sync_db_session.execute(select(func.count()).select_from(RetryTask)).scalar_one() == 1
@@ -147,7 +147,7 @@ def test_retry_task_admin_cancel_action(
             task_type_name=task_type_with_keys_sync.name,
             params={"task-type-key-int": 42},
         )
-        retry_task.status = status
+        retry_task.status = RetryTaskStatuses[status]
         sync_db_session.commit()
 
         admin.action_cancel_tasks([retry_task.retry_task_id])
@@ -198,7 +198,7 @@ def test_retry_task_admin_cancel_action_with_cleanup(
     mock_enqueue_many_retry_tasks = mocker.patch("retry_tasks_lib.admin.views.enqueue_many_retry_tasks")
 
     for status in RetryTaskStatuses.cancellable_statuses_names():
-        retry_task_sync_with_cleanup.status = status
+        retry_task_sync_with_cleanup.status = RetryTaskStatuses[status]
         sync_db_session.commit()
 
         admin.action_cancel_tasks([retry_task_sync_with_cleanup.retry_task_id])
@@ -239,9 +239,9 @@ def test_retry_task_admin_cancel_action_with_cleanup_multiple_tasks(
     )
 
     for status in RetryTaskStatuses.cancellable_statuses_names():
-        first_task.status = status
-        second_task.status = status
-        third_task.status = status
+        first_task.status = RetryTaskStatuses[status]
+        second_task.status = RetryTaskStatuses[status]
+        third_task.status = RetryTaskStatuses[status]
         sync_db_session.commit()
 
         admin.action_cancel_tasks([first_task.retry_task_id, second_task.retry_task_id, third_task.retry_task_id])

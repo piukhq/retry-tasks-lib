@@ -108,9 +108,10 @@ async def test__get_pending_retry_tasks(
     mock_log.error.assert_not_called()
 
     unexpected_id = retry_task_async.retry_task_id + 1
+    unexpected_id_set = {unexpected_id}
     await _get_pending_retry_tasks(async_db_session, [retry_task_async.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
-        f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {set([unexpected_id])}"
+        f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {unexpected_id_set!r}"
     )
 
 

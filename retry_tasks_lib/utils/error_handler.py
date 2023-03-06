@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import requests
 import rq
@@ -10,16 +11,18 @@ from sqlalchemy.orm.session import Session
 from retry_tasks_lib import logger
 from retry_tasks_lib.db.models import RetryTask
 from retry_tasks_lib.enums import RetryTaskStatuses
-from retry_tasks_lib.utils import UnresolvableHandlerPath, resolve_callable_from_path
+from retry_tasks_lib.utils import UnresolvableHandlerPathError, resolve_callable_from_path
 from retry_tasks_lib.utils.synchronous import enqueue_retry_task_delay, get_retry_task
 
 if TYPE_CHECKING:  # pragma: no cover
     from inspect import Traceback
 
+    from redis import Redis
+
 
 def _handle_request_exception(
     *,
-    connection: Any,
+    connection: "Redis",
     backoff_base: int,
     max_retries: int,
     retry_task: RetryTask,
@@ -32,7 +35,7 @@ def _handle_request_exception(
     terminal = False
     response_audit: dict[str, Any] = {
         "error": str(request_exception),
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "timestamp": datetime.now(tz=UTC).isoformat(),
     }
 
     if request_exception.response is not None:
@@ -72,7 +75,7 @@ def _handle_request_exception(
 def handle_request_exception(
     db_session: Session,
     *,
-    connection: Any,
+    connection: "Redis",
     backoff_base: int,
     max_retries: int,
     job: rq.job.Job,
@@ -116,6 +119,6 @@ def job_meta_handler(job: rq.job.Job, exc_type: type, exc_value: Exception, trac
         try:
             error_handler = resolve_callable_from_path(error_handler_path)
             return error_handler(job, exc_type, exc_value, traceback)
-        except UnresolvableHandlerPath as ex:
+        except UnresolvableHandlerPathError as ex:
             logger.warning(f"Could not import error handler for job {job} (meta={job.meta}): {ex}")
     return True

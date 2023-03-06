@@ -1,15 +1,15 @@
 import json
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, UniqueConstraint, text
+from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableList
-from sqlalchemy.orm import declarative_base, declarative_mixin, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, declarative_mixin, mapped_column, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.schema import MetaData
-from sqlalchemy.sql.sqltypes import String
 
 from retry_tasks_lib.db.retry_query import sync_run_query
 from retry_tasks_lib.enums import RetryTaskStatuses, TaskParamsKeyTypes
@@ -18,14 +18,18 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-TmpBase: Any = declarative_base()
+
+class TmpBase(DeclarativeBase):
+    pass
+
+
 utc_timestamp_sql = text("TIMEZONE('utc', CURRENT_TIMESTAMP)")
 
 
 @declarative_mixin
 class TimestampMixin:
-    created_at = Column(DateTime, server_default=utc_timestamp_sql, nullable=False)
-    updated_at = Column(
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=utc_timestamp_sql, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=utc_timestamp_sql,
         onupdate=utc_timestamp_sql,
@@ -36,21 +40,29 @@ class TimestampMixin:
 class RetryTask(TmpBase, TimestampMixin):
     __tablename__ = "retry_task"
 
-    retry_task_id = Column(Integer, primary_key=True)
-    attempts = Column(Integer, default=0, nullable=False)
-    audit_data = Column(MutableList.as_mutable(JSONB), nullable=False, default=text("'[]'::jsonb"))
-    next_attempt_time = Column(DateTime, nullable=True)
-    status = Column(Enum(RetryTaskStatuses), nullable=False, default=RetryTaskStatuses.PENDING, index=True)
+    retry_task_id: Mapped[int] = mapped_column(primary_key=True)
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
+    audit_data: Mapped[list] = mapped_column(
+        MutableList.as_mutable(JSONB),  # type: ignore
+        nullable=False,
+        default=text("'[]'::jsonb"),
+    )
+    next_attempt_time: Mapped[datetime] = mapped_column(nullable=True)
+    status: Mapped[RetryTaskStatuses] = mapped_column(nullable=False, default=RetryTaskStatuses.PENDING, index=True)
 
-    task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
+    task_type_id: Mapped[int] = mapped_column(ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
-    task_type = relationship("TaskType", back_populates="retry_tasks")
-    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="retry_task", lazy="joined")
+    task_type: Mapped["TaskType"] = relationship("TaskType", back_populates="retry_tasks")
+    task_type_key_values: Mapped[list["TaskTypeKeyValue"]] = relationship(
+        "TaskTypeKeyValue", back_populates="retry_task", lazy="joined"
+    )
 
     def get_task_type_key_values(self, values: list[tuple[int, str]]) -> list["TaskTypeKeyValue"]:
         task_type_key_values: list[TaskTypeKeyValue] = []
         for key_id, value in values:
-            serialization_fn: Callable[..., str] = getattr(json, "dumps") if isinstance(value, (dict, list)) else str
+            serialization_fn: Callable[..., str] = (
+                getattr(json, "dumps") if isinstance(value, (dict, list)) else str  # noqa: B009, UP038
+            )
             val = serialization_fn(value)
             task_type_key_values.append(
                 TaskTypeKeyValue(retry_task_id=self.retry_task_id, task_type_key_id=key_id, value=val)
@@ -87,7 +99,7 @@ class RetryTask(TmpBase, TimestampMixin):
                 self.attempts += 1
 
             if clear_next_attempt_time or next_attempt_time is not None:
-                self.next_attempt_time = next_attempt_time
+                self.next_attempt_time = next_attempt_time  # type: ignore
 
             db_session.commit()
 
@@ -100,15 +112,15 @@ class RetryTask(TmpBase, TimestampMixin):
 class TaskType(TmpBase, TimestampMixin):
     __tablename__ = "task_type"
 
-    task_type_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, index=True, unique=True)
-    path = Column(String, nullable=False)
-    cleanup_handler_path = Column(String, nullable=True)
-    error_handler_path = Column(String, nullable=False)
-    queue_name = Column(String, nullable=False)
+    task_type_id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(nullable=False, index=True, unique=True)
+    path: Mapped[str] = mapped_column(nullable=False)
+    cleanup_handler_path: Mapped[str] = mapped_column(nullable=True)
+    error_handler_path: Mapped[str] = mapped_column(nullable=False)
+    queue_name: Mapped[str] = mapped_column(nullable=False)
 
-    retry_tasks = relationship("RetryTask", back_populates="task_type")
-    task_type_keys = relationship("TaskTypeKey", back_populates="task_type", lazy="joined")
+    retry_tasks: Mapped[list["RetryTask"]] = relationship("RetryTask", back_populates="task_type")
+    task_type_keys: Mapped[list["TaskTypeKey"]] = relationship("TaskTypeKey", back_populates="task_type", lazy="joined")
 
     def get_key_ids_by_name(self) -> dict[str, int]:
         return {key.name: key.task_type_key_id for key in self.task_type_keys}
@@ -120,14 +132,16 @@ class TaskType(TmpBase, TimestampMixin):
 class TaskTypeKey(TmpBase, TimestampMixin):
     __tablename__ = "task_type_key"
 
-    task_type_key_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    type = Column(Enum(TaskParamsKeyTypes), nullable=False, default=TaskParamsKeyTypes.STRING)
+    task_type_key_id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(nullable=False)
+    type: Mapped[TaskParamsKeyTypes] = mapped_column(nullable=False, default=TaskParamsKeyTypes.STRING)  # noqa: A003
 
-    task_type_id = Column(Integer, ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
+    task_type_id: Mapped[int] = mapped_column(ForeignKey("task_type.task_type_id", ondelete="CASCADE"), nullable=False)
 
-    task_type = relationship("TaskType", back_populates="task_type_keys")
-    task_type_key_values = relationship("TaskTypeKeyValue", back_populates="task_type_key")
+    task_type: Mapped["TaskType"] = relationship("TaskType", back_populates="task_type_keys")
+    task_type_key_values: Mapped[list["TaskTypeKeyValue"]] = relationship(
+        "TaskTypeKeyValue", back_populates="task_type_key"
+    )
 
     __table_args__ = (UniqueConstraint("name", "task_type_id", name="name_task_type_id_unq"),)
 
@@ -138,21 +152,19 @@ class TaskTypeKey(TmpBase, TimestampMixin):
 class TaskTypeKeyValue(TmpBase, TimestampMixin):
     __tablename__ = "task_type_key_value"
 
-    value = Column(String, nullable=True)
+    value: Mapped[str] = mapped_column(nullable=True)
 
-    retry_task_id = Column(
-        Integer,
-        ForeignKey("retry_task.retry_task_id", ondelete="CASCADE"),
-        primary_key=True,
+    retry_task_id: Mapped[int] = mapped_column(
+        ForeignKey("retry_task.retry_task_id", ondelete="CASCADE"), primary_key=True
     )
-    task_type_key_id = Column(
-        Integer,
-        ForeignKey("task_type_key.task_type_key_id", ondelete="CASCADE"),
-        primary_key=True,
+    task_type_key_id: Mapped[int] = mapped_column(
+        ForeignKey("task_type_key.task_type_key_id", ondelete="CASCADE"), primary_key=True
     )
 
-    task_type_key = relationship("TaskTypeKey", back_populates="task_type_key_values", lazy="joined")
-    retry_task = relationship("RetryTask", back_populates="task_type_key_values", lazy="joined")
+    task_type_key: Mapped["TaskTypeKey"] = relationship(
+        "TaskTypeKey", back_populates="task_type_key_values", lazy="joined"
+    )
+    retry_task: Mapped["RetryTask"] = relationship("RetryTask", back_populates="task_type_key_values", lazy="joined")
 
     def __str__(self) -> str:
         return f"{self.task_type_key.name}: {self.value} (pk={self.retry_task_id},{self.task_type_key_id})"

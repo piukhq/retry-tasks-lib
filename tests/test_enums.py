@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -6,7 +6,7 @@ from retry_tasks_lib.enums import TaskParamsKeyTypes
 
 
 def test_task_params_key_type() -> None:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     today = now.date()
 
     for stored_value, expected_value, value_type in (

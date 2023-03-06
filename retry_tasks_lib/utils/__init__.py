@@ -1,8 +1,8 @@
+from collections.abc import Callable
 from importlib import import_module
-from typing import Callable
 
 
-class UnresolvableHandlerPath(Exception):
+class UnresolvableHandlerPathError(Exception):
     pass
 
 
@@ -13,4 +13,4 @@ def resolve_callable_from_path(path: str) -> Callable:
         handler: Callable = getattr(module, func)
         return handler
     except (ValueError, ModuleNotFoundError, AttributeError) as ex:
-        raise UnresolvableHandlerPath(f"Could resolve callable for path {ex}")  # pylint: disable=raise-missing-from
+        raise UnresolvableHandlerPathError(f"Could resolve callable for path {ex}") from ex

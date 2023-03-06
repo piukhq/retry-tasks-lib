@@ -1,7 +1,6 @@
-# pylint: disable=unused-argument, no-value-for-parameter
-
-from datetime import datetime, timedelta, timezone
-from typing import Any, Generator
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -32,7 +31,9 @@ from tests.db import SyncSessionMaker
 
 
 def test_retry_task_decorator_no_task_for_provided_retry_task_id() -> None:
-    @retryable_task(db_session_factory=SyncSessionMaker)
+    mock_redis = mock.MagicMock(spec=Redis)
+
+    @retryable_task(db_session_factory=SyncSessionMaker, redis_connection=mock_redis)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         pytest.fail("Task function ran when it should not have")
 
@@ -43,7 +44,9 @@ def test_retry_task_decorator_no_task_for_provided_retry_task_id() -> None:
 def test_retry_task_decorator_default_query_wrong_task_status(
     retry_task_sync: RetryTask, sync_db_session: Session
 ) -> None:
-    @retryable_task(db_session_factory=SyncSessionMaker)
+    mock_redis = mock.MagicMock(spec=Redis)
+
+    @retryable_task(db_session_factory=SyncSessionMaker, redis_connection=mock_redis)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         pytest.fail("Task function ran when it should not have")
 
@@ -73,7 +76,9 @@ def test_retry_task_decorator_default_query_wrong_task_status(
 def test_retry_task_decorator_default_query_cancelled_task(
     mock_logger: mock.Mock, retry_task_sync: RetryTask, sync_db_session: Session
 ) -> None:
-    @retryable_task(db_session_factory=SyncSessionMaker)
+    mock_redis = mock.MagicMock(spec=Redis)
+
+    @retryable_task(db_session_factory=SyncSessionMaker, redis_connection=mock_redis)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         pytest.fail("Task function ran when it should not have")
 
@@ -90,9 +95,10 @@ def test_retry_task_decorator_default_query_cancelled_task(
 
 
 def test_retry_task_decorator_default_query(retry_task_sync: RetryTask, sync_db_session: Session) -> None:
+    mock_redis = mock.MagicMock(spec=Redis)
     assert retry_task_sync.status == RetryTaskStatuses.PENDING
 
-    @retryable_task(db_session_factory=SyncSessionMaker)
+    @retryable_task(db_session_factory=SyncSessionMaker, redis_connection=mock_redis)
     def task_func(retry_task: RetryTask, db_session: Session) -> None:
         assert retry_task.retry_task_id == retry_task_sync.retry_task_id
 
@@ -166,7 +172,7 @@ def test_retry_task_decorator_default_with_sub_query_different_task_type(
     # make a new task type using task_type_with_keys_sync as a template
     sync_db_session.expunge(task_type_with_keys_sync)
     make_transient(task_type_with_keys_sync)
-    task_type_with_keys_sync.task_type_id = None
+    task_type_with_keys_sync.task_type_id = None  # type: ignore
     task_type_with_keys_sync.name = "new-task-type"
     sync_db_session.add(task_type_with_keys_sync)
     sync_db_session.flush()
@@ -199,7 +205,7 @@ def test_retry_task_decorator_default_with_sub_query_different_task_type(
 
 @pytest.fixture(scope="function")
 def fixed_now() -> Generator[datetime, None, None]:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     with mock.patch("retry_tasks_lib.utils.synchronous.datetime") as mock_datetime:
         mock_datetime.now.return_value = now
         yield now
@@ -259,7 +265,7 @@ def test_enqueue_many_retry_tasks(sync_db_session: "Session", retry_task_sync: R
     # duplicate this task to make another
     sync_db_session.expunge(retry_task_sync)
     make_transient(retry_task_sync)
-    retry_task_sync.retry_task_id = None
+    retry_task_sync.retry_task_id = None  # type: ignore
     sync_db_session.add(retry_task_sync)
     sync_db_session.commit()
     task_ids.append(retry_task_sync.retry_task_id)
@@ -320,9 +326,10 @@ def test__get_pending_retry_tasks(mocker: MockerFixture, sync_db_session: Sessio
     mock_log.error.assert_not_called()
 
     unexpected_id = retry_task_sync.retry_task_id + 1
+    unexpected_id_set = {unexpected_id}
     _get_enqueuable_retry_tasks(sync_db_session, [retry_task_sync.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
-        f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {set([unexpected_id])}"
+        f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {unexpected_id_set!r}"
     )
 
 
@@ -364,12 +371,12 @@ def test_sync_create_many_tasks_and_get_retry_task(
     sync_db_session.add_all(retry_tasks)
     sync_db_session.commit()
 
-    for task, params in zip(retry_tasks, params_list):
+    for task, params in zip(retry_tasks, params_list, strict=True):
         for status in (RetryTaskStatuses.IN_PROGRESS, RetryTaskStatuses.WAITING):
             task.status = status
             sync_db_session.commit()
-            task = get_retry_task(sync_db_session, task.retry_task_id)
-            assert task.get_params() == params
+            t = get_retry_task(sync_db_session, task.retry_task_id)
+            assert t.get_params() == params
 
 
 def test_get_retry_task(sync_db_session: "Session", retry_task_sync: RetryTask) -> None:
@@ -444,7 +451,7 @@ def test_enqueue_retry_task_with_multiple_cleanup_jobs(
 
     rq_job_ids = q.get_job_ids()
     assert len(rq_job_ids) == 2
-    for job_id, task in zip(rq_job_ids, [first_task, second_task]):
+    for job_id, task in zip(rq_job_ids, [first_task, second_task], strict=True):
         job = rq.job.Job.fetch(job_id, connection=redis)
         assert job.kwargs == {"retry_task_id": task.retry_task_id}
         assert job.func_name == task.task_type.cleanup_handler_path
