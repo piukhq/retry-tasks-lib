@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -194,6 +194,28 @@ def retry_task_sync_fixture(sync_db_session: Session, task_type_with_keys_sync: 
     sync_db_session.add(task)
     sync_db_session.commit()
     return task
+
+
+@pytest.fixture(scope="function")
+def create_mock_task(sync_db_session: "Session", task_type_with_keys_sync: TaskType) -> Callable[..., RetryTask]:
+    params = {
+        "attempts": 0,
+        "audit_data": [],
+        "next_attempt_time": None,
+        "status": RetryTaskStatuses.PENDING,
+        "task_type_id": task_type_with_keys_sync.task_type_id,
+    }
+
+    def _create_task(updated_params: dict | None = None) -> RetryTask:
+        if updated_params:
+            params.update(updated_params)
+
+        task = RetryTask(**params)
+        sync_db_session.add(task)
+        sync_db_session.commit()
+        return task
+
+    return _create_task
 
 
 @pytest.fixture(scope="function", name="task_type_with_keys_async")
