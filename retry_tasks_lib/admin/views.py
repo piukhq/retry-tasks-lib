@@ -79,7 +79,7 @@ class RetryTaskAdminBase(ModelView):
         % json.dumps(model.audit_data, indent=4, sort_keys=True),
     }
 
-    def get_failed_and_cancelled_tasks(self, ids: list[str]) -> list[RetryTask]:
+    def get_failed_and_cancelled_tasks(self, ids: list[int]) -> list[RetryTask]:
         return (
             self.session.execute(
                 select(RetryTask)
@@ -112,7 +112,7 @@ class RetryTaskAdminBase(ModelView):
 
     @action("requeue", "Requeue", "Are you sure you want to requeue selected FAILED and/or CANCELLED tasks?")
     def action_requeue_tasks(self, ids: list[str]) -> None:
-        tasks = self.get_failed_and_cancelled_tasks(ids)
+        tasks = self.get_failed_and_cancelled_tasks(list(map(int, ids)))
         if not tasks:
             flash(f"No relevant {RetryTaskStatuses.requeueable_statuses_names()} tasks to requeue.", category="error")
             return
@@ -155,7 +155,7 @@ class RetryTaskAdminBase(ModelView):
                 .options(selectinload(RetryTask.task_type))
                 .with_for_update()
                 .where(
-                    RetryTask.retry_task_id.in_(ids),
+                    RetryTask.retry_task_id.in_(list(map(int, ids))),
                     RetryTask.status.in_(required_statuses),
                 )
                 .order_by(RetryTask.retry_task_id)
