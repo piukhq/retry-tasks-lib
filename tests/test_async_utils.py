@@ -11,8 +11,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from retry_tasks_lib.db.models import RetryTask, TaskType
 from retry_tasks_lib.enums import RetryTaskStatuses
 from retry_tasks_lib.utils.asynchronous import (
-    _get_pending_retry_task,
-    _get_pending_retry_tasks,
+    _get_enqueuable_retry_task,
+    _get_enqueuable_retry_tasks,
     async_create_many_tasks,
     async_create_task,
     enqueue_many_retry_tasks,
@@ -29,7 +29,6 @@ async def test_enqueue_retry_task(
     retry_task_async: RetryTask,
     redis: Redis,
 ) -> None:
-
     q = rq.Queue(retry_task_async.task_type.queue_name, connection=redis)
     assert len(q.jobs) == 0
     await enqueue_retry_task(
@@ -91,8 +90,8 @@ async def test_enqueue_many_retry_tasks_empty_list(
 async def test__get_pending_retry_task(async_db_session: mock.AsyncMock, retry_task_async: RetryTask) -> None:
     assert retry_task_async.status == RetryTaskStatuses.PENDING
     with pytest.raises(NoResultFound):
-        await _get_pending_retry_task(async_db_session, 101)
-    await _get_pending_retry_task(async_db_session, retry_task_async.retry_task_id)
+        await _get_enqueuable_retry_task(async_db_session, 101)
+    await _get_enqueuable_retry_task(async_db_session, retry_task_async.retry_task_id)
 
 
 @pytest.mark.asyncio
@@ -102,14 +101,14 @@ async def test__get_pending_retry_tasks(
     mock_log = mocker.patch("retry_tasks_lib.utils.asynchronous.logger")
     assert retry_task_async.status == RetryTaskStatuses.PENDING
     with pytest.raises(ValueError):
-        await _get_pending_retry_tasks(async_db_session, [101])
+        await _get_enqueuable_retry_tasks(async_db_session, [101])
 
-    await _get_pending_retry_tasks(async_db_session, [retry_task_async.retry_task_id])
+    await _get_enqueuable_retry_tasks(async_db_session, [retry_task_async.retry_task_id])
     mock_log.error.assert_not_called()
 
     unexpected_id = retry_task_async.retry_task_id + 1
     unexpected_id_set = {unexpected_id}
-    await _get_pending_retry_tasks(async_db_session, [retry_task_async.retry_task_id, unexpected_id])
+    await _get_enqueuable_retry_tasks(async_db_session, [retry_task_async.retry_task_id, unexpected_id])
     mock_log.error.assert_called_once_with(
         f"Error fetching some RetryTasks requested for enqueuing. Missing RetryTask ids: {unexpected_id_set!r}"
     )

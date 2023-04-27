@@ -74,7 +74,7 @@ async def async_create_many_tasks(
     return retry_tasks
 
 
-async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
+async def _get_enqueuable_retry_task(db_session: AsyncSession, retry_task_id: int) -> RetryTask:  # pragma: no cover
     return (
         await db_session.execute(
             select(RetryTask)
@@ -82,13 +82,13 @@ async def _get_pending_retry_task(db_session: AsyncSession, retry_task_id: int) 
             .with_for_update()
             .where(
                 RetryTask.retry_task_id == retry_task_id,
-                RetryTask.status == RetryTaskStatuses.PENDING,
+                RetryTask.status.in_(RetryTaskStatuses.enqueuable_statuses()),
             )
         )
     ).scalar_one()
 
 
-async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> Sequence[RetryTask]:
+async def _get_enqueuable_retry_tasks(db_session: AsyncSession, retry_tasks_ids: list[int]) -> Sequence[RetryTask]:
     retry_tasks_ids_set = set(retry_tasks_ids)
     retry_tasks = (
         (
@@ -98,7 +98,7 @@ async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: li
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
-                    RetryTask.status == RetryTaskStatuses.PENDING,
+                    RetryTask.status.in_(RetryTaskStatuses.enqueuable_statuses()),
                 )
             )
         )
@@ -120,7 +120,7 @@ async def _get_pending_retry_tasks(db_session: AsyncSession, retry_tasks_ids: li
 
 async def enqueue_retry_task(db_session: AsyncSession, *, retry_task_id: int, connection: "Redis") -> None:
     retry_task = await async_run_query(
-        _get_pending_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
+        _get_enqueuable_retry_task, db_session, rollback_on_exc=False, retry_task_id=retry_task_id
     )
 
     def blocking_io() -> None:
@@ -148,7 +148,7 @@ async def enqueue_many_retry_tasks(
         return
 
     retry_tasks: list[RetryTask] = await async_run_query(
-        _get_pending_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
+        _get_enqueuable_retry_tasks, db_session, rollback_on_exc=False, retry_tasks_ids=retry_tasks_ids
     )
 
     tasks_by_queue: defaultdict[str, list[RetryTask]] = defaultdict(list)
