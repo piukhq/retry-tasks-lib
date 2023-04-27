@@ -64,7 +64,6 @@ def _get_additional_task_ids(
     sentry_span: Span,
 ) -> Sequence[int]:
     with sentry_span.start_child(op="build-additional-filters"):
-
         # Note that this object is not FOR UPDATE locked as it is merely used for its related data
         def _fetch_task_to_run(db_session: Session) -> RetryTask:
             return (
@@ -142,7 +141,6 @@ def _route_task_execution(
     requeue_delay_range: DelayRangeType,
     sentry_span: Span,
 ) -> tuple[bool, RetryTask]:
-
     with sentry_span.start_child(op="can-run-task-now-logic"):
         this_task = None
         can_run = False
@@ -253,10 +251,8 @@ def retryable_task(
     def decorator(task_func: Callable) -> Callable:
         @wraps(task_func)
         def wrapper(retry_task_id: int) -> None:
-
             with db_session_factory() as db_session:
                 with trace(op="rq-tasks-decorator") as span:
-
                     # this is to prevent session pool sharing between parent and forked process:
                     # https://docs.sqlalchemy.org/en/14/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
                     if not USE_NULL_POOL:
@@ -272,7 +268,6 @@ def retryable_task(
                         suffix = "without-exclusive-constraints"
 
                     with span.start_child(op=f"fetch-task-data-{suffix}"):
-
                         retry_tasks: list[RetryTask] = sync_run_query(
                             lambda db_session: (
                                 db_session.execute(
@@ -432,13 +427,7 @@ def _get_enqueuable_retry_tasks(db_session: Session, retry_tasks_ids: list[int])
                 .with_for_update()
                 .where(
                     RetryTask.retry_task_id.in_(retry_tasks_ids_set),
-                    RetryTask.status.in_(
-                        {
-                            RetryTaskStatuses.PENDING,
-                            RetryTaskStatuses.WAITING,
-                            RetryTaskStatuses.CLEANUP,
-                        }
-                    ),
+                    RetryTask.status.in_(RetryTaskStatuses.enqueuable_statuses()),
                 )
             )
         )
@@ -468,7 +457,6 @@ def enqueue_many_retry_tasks(
     use_cleanup_hanlder_path: bool = False,
     use_task_type_exc_handler: bool = True,
 ) -> None:
-
     if not retry_tasks_ids:
         logger.warning("'enqueue_many_retry_tasks' expects a list of task's ids but received an empty list instead.")
         return

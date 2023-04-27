@@ -28,6 +28,14 @@ class RetryTaskStatuses(enum.Enum):
     def requeueable_statuses_names(cls) -> list[str]:
         return [cls.FAILED.name, cls.CANCELLED.name]
 
+    @classmethod
+    def enqueuable_statuses(cls) -> list:
+        return [
+            cls.PENDING,
+            cls.WAITING,
+            cls.CLEANUP,
+        ]
+
 
 class TaskParamsKeyTypes(enum.Enum):
     STRING = enum.auto()
