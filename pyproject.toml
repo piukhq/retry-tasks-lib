@@ -34,7 +34,7 @@ reporting = ["prometheus-client"]
 black = "^22.3.0"
 isort = "^5.9.3"
 mypy = "^1.0.0"
-xenon = "^0.8.0"
+xenon = "^0.9.1"
 types-requests = "^2.25.9"
 pytest = "^6.2.5"
 pytest-cov = "^3.0.0"
@@ -87,8 +87,6 @@ good-names=["k", "v", "i", "q", "fn", "ex"]
 
 [tool.poetry-dynamic-versioning]
 enable = true
-vcs = "git"
-pattern = '^((?P<epoch>\d+)!)?(?P<base>\d+(\.\d+)*)'
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
@@ -100,7 +98,7 @@ show-source = true
 target-version = "py311"
 select = [
     "F",    # Pyflakes (F)
-    "E", 
+    "E",
     "W",    # pycodestyle (E, W)
     "C90",  # mccabe (C90)
     # isort (I)
